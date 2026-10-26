@@ -1,0 +1,2717 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Интерактивный тренажёр nftables в браузере: уровни с тестовыми пакетами, симулятор netfilter с conntrack и NAT, трассировка правил.">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>nft-тренажёр</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Onest:wght@400;500;600&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: рабочий стол админа — список уровней | задача и редактор | результаты и трассировка пакетов */
+:root {
+  --bg: #e9edf1;
+  --panel: #ffffff;
+  --panel-2: #f4f6f9;
+  --ink: #17202a;
+  --muted: #5a6774;
+  --line: #d3dae2;
+  --accent: #0d6a8a;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcebf1;
+  --ok: #1b7f45;
+  --ok-soft: #dcf1e4;
+  --bad: #be3a2f;
+  --bad-soft: #f8e1de;
+  --warn: #a8690f;
+  --warn-soft: #f6ead3;
+  --code-bg: #fbfcfd;
+  --sx-kw: #8a3fa8;
+  --sx-kw2: #0d6a8a;
+  --sx-sel: #2c4f9e;
+  --sx-num: #9a5b06;
+  --sx-str: #2e7d32;
+  --sx-com: #8593a0;
+  --sx-var: #b0345a;
+  --font-display: "Unbounded", "Onest", system-ui, sans-serif;
+  --font-body: "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  --lh: 21px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1317; --panel: #151c22; --panel-2: #1a232a; --ink: #e2e8ed; --muted: #8e9ba7;
+    --line: #26313a; --accent: #4fb0d4; --accent-ink: #06222d; --accent-soft: #15303b;
+    --ok: #52c483; --ok-soft: #163325; --bad: #f0695e; --bad-soft: #3a1c1a; --warn: #e4aa4a; --warn-soft: #362812;
+    --code-bg: #11171c; --sx-kw: #d08ff0; --sx-kw2: #5cc3e6; --sx-sel: #8eb0ff; --sx-num: #f0b35a;
+    --sx-str: #8fd394; --sx-com: #66737f; --sx-var: #ff8bab;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1317; --panel: #151c22; --panel-2: #1a232a; --ink: #e2e8ed; --muted: #8e9ba7;
+  --line: #26313a; --accent: #4fb0d4; --accent-ink: #06222d; --accent-soft: #15303b;
+  --ok: #52c483; --ok-soft: #163325; --bad: #f0695e; --bad-soft: #3a1c1a; --warn: #e4aa4a; --warn-soft: #362812;
+  --code-bg: #11171c; --sx-kw: #d08ff0; --sx-kw2: #5cc3e6; --sx-sel: #8eb0ff; --sx-num: #f0b35a;
+  --sx-str: #8fd394; --sx-com: #66737f; --sx-var: #ff8bab;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); }
+/* моноширинный код без лигатур: «!=» не склеивается, курсор редактора не съезжает */
+html { font-feature-settings: "liga" 0, "calt" 0; }
+body { color: var(--ink); font: 15px/1.55 var(--font-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+button { font: inherit; color: inherit; }
+code, pre, kbd { font-family: var(--font-mono); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand b { font: 600 18px/1 var(--font-display); letter-spacing: -0.01em; }
+.brand b span { color: var(--accent); }
+.brand small { color: var(--muted); font-size: 12.5px; }
+.tabs { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.tabs button { border: 0; background: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 14px; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.progress { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.progress .bar { width: 120px; height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: var(--ok); width: 0; transition: width .4s; }
+.progress b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.wrap { padding-block: 18px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1680px; margin: 0 auto; }
+
+/* missions grid */
+.missions { display: grid; grid-template-columns: 236px minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.levels { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 70px); display: flex; flex-direction: column; gap: 2px; }
+.levels h2 { font: 600 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 4px 10px 10px; }
+.lvl { display: grid; grid-template-columns: 26px 1fr 16px; align-items: center; gap: 8px; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--ink); }
+.lvl:hover { background: var(--panel); }
+.lvl .no { font: 500 12px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.lvl .dot { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--line); }
+.lvl.done .dot { background: var(--ok); border-color: var(--ok); box-shadow: inset 0 0 0 2.5px var(--bg); }
+.lvl[aria-current="true"] { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+
+/* brief */
+.brief { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); }
+.brief h1 { font: 600 24px/1.2 var(--font-display); margin: 0; letter-spacing: -0.015em; text-wrap: balance; }
+.task { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; font-size: 15px; }
+.task b { display: block; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.topo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; }
+.topo .host { font: 600 12.5px var(--font-mono); margin-right: 4px; }
+.topo .if { font-family: var(--font-mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.topo .if em { font-style: normal; color: var(--muted); font-family: var(--font-body); }
+.topo .fw { color: var(--muted); }
+details.theory { border-top: 1px solid var(--line); padding-top: 12px; }
+details.theory summary { cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.theory summary::before { content: "▸"; color: var(--accent); transition: transform .15s; }
+details.theory[open] summary::before { transform: rotate(90deg); }
+.theory-body { font-size: 14.5px; max-width: 70ch; }
+.theory-body p, .theory-body ul, .theory-body ol { margin: 10px 0; }
+.theory-body ul, .theory-body ol { padding-left: 20px; }
+.theory-body code { font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); padding: 0 4px; border-radius: 4px; }
+.theory-body pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 10px 0; }
+.theory-body pre .c { color: var(--sx-com); }
+.theory-body .warn { background: var(--warn-soft); border-radius: 6px; padding: 8px 10px; }
+.theory-body .muted { color: var(--muted); }
+.helpers { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.hints { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.hints:empty { display: none; }
+.hint { font-size: 14px; background: var(--panel-2); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: 7px 10px; }
+.hint code { font-size: 13px; }
+.solution { width: 100%; }
+.solution pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0 0 8px; max-height: 340px; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 13px; cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: none; }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn kbd { font-size: 11px; opacity: .75; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* editor */
+.edcard { overflow: hidden; }
+.edbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.edbar .file { font: 500 12.5px var(--font-mono); color: var(--muted); margin-right: auto; }
+.ed { position: relative; display: grid; grid-template-columns: 62px minmax(0, 1fr); background: var(--code-bg); height: 360px; }
+.ed-gutter { overflow: hidden; border-right: 1px solid var(--line); padding: 12px 0; font: 12px/var(--lh) var(--font-mono); color: var(--muted); user-select: none; }
+.ed-gutter div { height: var(--lh); display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding-right: 9px; font-variant-numeric: tabular-nums; }
+.ed-gutter .h { font-size: 10.5px; line-height: 15px; padding: 0 4px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.ed-gutter .err .n { color: var(--bad); font-weight: 600; }
+.ed-body { position: relative; min-width: 0; }
+.ed-hl, .ed-ta { position: absolute; inset: 0; margin: 0; padding: 12px 14px; font: 13px/var(--lh) var(--font-mono); white-space: pre; tab-size: 2; letter-spacing: 0; word-spacing: 0; }
+.ed-hl { overflow: hidden; pointer-events: none; color: var(--ink); }
+.ed-lines { width: max-content; min-width: 100%; }
+.ed-lines > div { height: var(--lh); margin: 0 -14px; padding: 0 14px; }
+.ed-lines > div.err { background: var(--bad-soft); }
+.ed-lines > div.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+.ed-ta { resize: none; border: 0; outline: none; background: transparent; color: transparent; caret-color: var(--ink); overflow: auto; }
+.ed-ta::selection { background: rgb(13 106 138 / .25); color: transparent; }
+.sx-kw { color: var(--sx-kw); font-weight: 600; }
+.sx-kw2 { color: var(--sx-kw2); }
+.sx-sel { color: var(--sx-sel); }
+.sx-num { color: var(--sx-num); }
+.sx-str { color: var(--sx-str); }
+.sx-com { color: var(--sx-com); font-style: italic; }
+.sx-var { color: var(--sx-var); }
+.sx-ok { color: var(--ok); font-weight: 600; }
+.sx-bad { color: var(--bad); font-weight: 600; }
+.sx-warn { color: var(--warn); font-weight: 600; }
+.sx-jmp { color: var(--accent); font-weight: 600; }
+.sx-stmt { color: var(--sx-kw); }
+.errbox { border-top: 1px solid var(--line); background: var(--bad-soft); padding: 10px 14px; font: 12.5px/1.55 var(--font-mono); white-space: pre-wrap; overflow-x: auto; color: var(--ink); }
+.errbox .loc { color: var(--bad); font-weight: 600; }
+.errbox .hintline { font-family: var(--font-body); font-size: 13.5px; color: var(--ink); margin-top: 6px; white-space: normal; }
+.warnbox { border-top: 1px solid var(--line); background: var(--warn-soft); padding: 8px 14px; font-size: 13px; }
+
+/* results */
+.results { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 70px); max-height: calc(100vh - 90px); overflow: auto; }
+.res-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.score { display: flex; align-items: baseline; gap: 10px; }
+.score b { font: 600 28px/1 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.legend { font-size: 12px; color: var(--muted); }
+.legend .pill { font-size: 10px; padding: 2px 5px; }
+.score span { color: var(--muted); font-size: 14px; }
+.segs { display: flex; gap: 3px; }
+.segs i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.segs i.ok { background: var(--ok); }
+.segs i.bad { background: var(--bad); }
+.solved { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--ok-soft); border-radius: 8px; padding: 10px 12px; }
+.solved strong { color: var(--ok); }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.checks li { display: flex; gap: 8px; }
+.checks li::before { content: "✓"; color: var(--ok); font-weight: 700; width: 14px; flex: none; }
+.checks li.bad::before { content: "✗"; color: var(--bad); }
+.flows { padding: 6px 0 12px; }
+.flow { padding: 10px 18px 4px; }
+.flow h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pkt { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; background: var(--panel); }
+.pkt.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.pkt summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; }
+.pkt summary::-webkit-details-marker { display: none; }
+.pkt .ic { font-weight: 700; text-align: center; }
+.pkt.ok .ic { color: var(--ok); }
+.pkt.bad .ic { color: var(--bad); }
+.pkt.pending .ic { color: var(--muted); }
+.ptext { font: 12.5px/1.45 var(--font-mono); overflow-wrap: anywhere; min-width: 0; }
+.ptext .iif { color: var(--accent); font-weight: 600; }
+.ptext .arrow { color: var(--muted); }
+.ptext .fl { color: var(--muted); }
+.verd { display: flex; gap: 4px; align-items: center; font-size: 11.5px; white-space: nowrap; }
+.pill { font: 600 11px/1 var(--font-mono); padding: 4px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line); }
+.pill.accept { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.drop { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.pill.reject { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.pill.want { background: none; color: var(--muted); border-style: dashed; }
+.why { margin: 0 10px 8px 36px; font-size: 13px; color: var(--ink); background: var(--bad-soft); border-radius: 6px; padding: 6px 9px; }
+.why ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* trace */
+.trace { border-top: 1px dashed var(--line); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.path { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+.path span { font: 600 10.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+.path span.end-drop { background: var(--bad-soft); color: var(--bad); }
+.path span.end-reject { background: var(--warn-soft); color: var(--warn); }
+.path span.end-accept { background: var(--ok-soft); color: var(--ok); }
+.path i { color: var(--muted); font-style: normal; font-size: 11px; }
+.st { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 2px 4px; border-radius: 4px; }
+.st .k { font: 600 10px/1.8 var(--font-mono); text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
+.st .v { min-width: 0; overflow-wrap: anywhere; }
+.st.hook { margin-top: 6px; }
+.st.hook .v { font: 600 11.5px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+.st.chain .v { font-family: var(--font-mono); font-size: 12px; }
+.st.chain .v small { color: var(--muted); font-family: var(--font-body); }
+.st.rule, .st.policy { cursor: pointer; }
+.st.rule:hover, .st.policy:hover { background: var(--panel-2); }
+.st.rule .v { font-family: var(--font-mono); font-size: 12px; }
+.st.rule .ln { color: var(--muted); margin-right: 6px; }
+.st .tag { font: 600 10.5px var(--font-mono); padding: 1px 5px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+.tag.accept { background: var(--ok-soft); color: var(--ok); }
+.tag.drop { background: var(--bad-soft); color: var(--bad); }
+.tag.reject { background: var(--warn-soft); color: var(--warn); }
+.tag.jmp, .tag.nat { background: var(--accent-soft); color: var(--accent); }
+.tag.cont { background: var(--panel-2); color: var(--muted); }
+.st.note .v, .st.ct .v, .st.route .v, .st.back .v { color: var(--muted); }
+.st.nat .v { color: var(--accent); font-family: var(--font-mono); font-size: 12px; }
+.st.log .v { color: var(--warn); }
+.st.end { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+.st.end .v { font-weight: 600; }
+.copies { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+/* sandbox */
+.sandbox { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.console { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.console h2, .sbside h2 { font: 600 16px/1.2 var(--font-display); margin: 0; }
+.sendrow { display: flex; gap: 8px; }
+.sendrow input { flex: 1; min-width: 0; font: 13px var(--font-mono); padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--code-bg); color: var(--ink); }
+.dslhelp { font-size: 12.5px; color: var(--muted); }
+.dslhelp code { font-size: 12px; color: var(--ink); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
+.presets button:hover { border-color: var(--accent); color: var(--accent); }
+.inerr { color: var(--bad); font-size: 13px; }
+.inerr:empty { display: none; }
+.history { display: flex; flex-direction: column; gap: 6px; }
+.empty { color: var(--muted); font-size: 13.5px; border: 1px dashed var(--line); border-radius: 8px; padding: 14px; }
+.cttable { width: 100%; border-collapse: collapse; font: 12px var(--font-mono); }
+.cttable th { text-align: left; font: 600 11px var(--font-body); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.cttable td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tablewrap { overflow-x: auto; }
+.sbside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sbintro { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.sbintro p { margin: 0; color: var(--muted); max-width: 70ch; }
+
+/* reference */
+.ref { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; align-items: start; }
+.ref .card { padding: 18px 20px; }
+.ref h2 { font: 600 16px/1.25 var(--font-display); margin: 0 0 12px; }
+.ref .wide { grid-column: 1 / -1; }
+.ref table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ref td, .ref th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ref th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.ref td code { font-size: 12.5px; white-space: nowrap; }
+.ref td:first-child { width: 46%; }
+.ref pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0; }
+.ref p { font-size: 14px; margin: 8px 0; max-width: 72ch; }
+.ref .c { color: var(--sx-com); }
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.diagram .box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.diagram .ext { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.5; }
+.diagram .dec { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.diagram text { font: 600 13px var(--font-mono); fill: var(--ink); font-variant-ligatures: none; }
+.diagram text.sub { font: 400 11.5px var(--font-body); fill: var(--muted); }
+.diagram .arr { stroke: var(--muted); stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+.diagram #ah path { fill: var(--muted); }
+
+[hidden] { display: none !important; }
+
+@media (max-width: 1240px) {
+  .missions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .levels { position: static; grid-column: 1 / -1; flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+  .levels h2 { display: none; }
+  .lvl { grid-template-columns: auto auto 14px; white-space: nowrap; background: var(--panel); border: 1px solid var(--line); }
+  .lvl[aria-current="true"] { box-shadow: inset 0 -3px 0 var(--accent); }
+}
+@media (max-width: 900px) {
+  .missions, .sandbox { grid-template-columns: minmax(0, 1fr); }
+  .results { position: static; max-height: none; }
+  .progress { margin-left: 0; }
+  .brief { padding: 16px; }
+  .brief h1 { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><b>nft<span>·</span>тренажёр</b><small>nftables без риска потерять SSH</small></div>
+    <nav class="tabs" role="tablist" aria-label="Разделы">
+      <button role="tab" id="tab-missions" data-view="missions" aria-selected="true">Уровни</button>
+      <button role="tab" id="tab-sandbox" data-view="sandbox" aria-selected="false">Песочница</button>
+      <button role="tab" id="tab-reference" data-view="reference" aria-selected="false">Справочник</button>
+    </nav>
+    <div class="progress" aria-live="polite"><span>Пройдено <b id="prog-n">0</b> из <b id="prog-t">12</b></span><span class="bar"><i id="prog-bar"></i></span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ===== уровни ===== -->
+  <section id="view-missions" class="missions">
+    <nav class="levels" id="levels" aria-label="Уровни"></nav>
+    <div class="col">
+      <article class="card brief" id="brief"></article>
+      <div class="card edcard">
+        <div class="edbar">
+          <span class="file">/etc/nftables.conf</span>
+          <button class="btn ghost" id="btn-reset" type="button">Вернуть исходный</button>
+          <button class="btn primary" id="btn-run" type="button">Проверить <kbd>⌘↵</kbd></button>
+        </div>
+        <div id="ed-main"></div>
+        <div class="errbox" id="err-main" hidden></div>
+        <div class="warnbox" id="warn-main" hidden></div>
+      </div>
+    </div>
+    <aside class="card results" id="results" aria-live="polite"></aside>
+  </section>
+
+  <!-- ===== песочница ===== -->
+  <section id="view-sandbox" class="sandbox" hidden>
+    <div class="sbside">
+      <div class="card sbintro">
+        <h2>Песочница: шлюз gw-01</h2>
+        <p>Пишите любой набор правил и отправляйте через него пакеты. Conntrack сохраняется между пакетами, как в живом ядре: отправьте запрос, а потом ответ на него.</p>
+        <div class="topo" id="sb-topo"></div>
+      </div>
+      <div class="card edcard">
+        <div class="edbar">
+          <span class="file">/etc/nftables.conf</span>
+          <button class="btn ghost" id="sb-reset" type="button">Пример по умолчанию</button>
+        </div>
+        <div id="ed-sb"></div>
+        <div class="errbox" id="err-sb" hidden></div>
+        <div class="warnbox" id="warn-sb" hidden></div>
+      </div>
+    </div>
+    <div class="sbside">
+      <div class="card console">
+        <h2>Отправить пакет</h2>
+        <form class="sendrow" id="sb-form">
+          <label for="sb-pkt" hidden>Пакет</label>
+          <input id="sb-pkt" autocomplete="off" spellcheck="false" value="eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443">
+          <button class="btn primary" type="submit">Отправить</button>
+        </form>
+        <div class="inerr" id="sb-inerr"></div>
+        <div class="dslhelp">Формат: <code>&lt;iif|-&gt; &lt;tcp|udp|icmp&gt; &lt;src[:port]&gt; &gt; &lt;dst[:port]&gt; [флаги]</code>. «-» значит, что пакет отправляет сам хост. TCP-флаги через запятую (по умолчанию <code>syn</code>), тип ICMP по имени, <code>ct=invalid|related</code> задаёт состояние, <code>x20</code> — пачка из 20 пакетов.</div>
+        <div class="presets" id="sb-presets"></div>
+      </div>
+      <div class="card console">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin-right:auto">Таблица conntrack</h2><button class="btn ghost" id="sb-ctflush" type="button">conntrack -F</button></div>
+        <div class="tablewrap" id="sb-ct"></div>
+      </div>
+      <div class="card console">
+        <h2>Трассировка</h2>
+        <div class="history" id="sb-history"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== справочник ===== -->
+  <section id="view-reference" class="ref" hidden>
+    <div class="card wide">
+      <h2>Путь пакета через хуки netfilter</h2>
+      <div class="diagram">
+        <svg viewBox="0 0 900 250" role="img" aria-label="Схема: prerouting, маршрутизация, затем input или forward; output и postrouting для исходящих">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z"/></marker></defs>
+          <rect class="ext" x="10" y="30" width="96" height="44" rx="8"/><text x="58" y="57" text-anchor="middle">сеть</text>
+          <rect class="box" x="140" y="30" width="130" height="44" rx="8"/><text x="205" y="52" text-anchor="middle">prerouting</text><text class="sub" x="205" y="67" text-anchor="middle">dnat · raw</text>
+          <rect class="dec" x="304" y="30" width="120" height="44" rx="22"/><text class="sub" x="364" y="56" text-anchor="middle">маршрутизация</text>
+          <rect class="box" x="460" y="30" width="120" height="44" rx="8"/><text x="520" y="52" text-anchor="middle">forward</text><text class="sub" x="520" y="67" text-anchor="middle">транзит</text>
+          <rect class="box" x="616" y="30" width="140" height="44" rx="8"/><text x="686" y="52" text-anchor="middle">postrouting</text><text class="sub" x="686" y="67" text-anchor="middle">snat · masquerade</text>
+          <rect class="ext" x="790" y="30" width="96" height="44" rx="8"/><text x="838" y="57" text-anchor="middle">сеть</text>
+          <rect class="box" x="304" y="170" width="120" height="44" rx="8"/><text x="364" y="192" text-anchor="middle">input</text><text class="sub" x="364" y="207" text-anchor="middle">хосту</text>
+          <rect class="ext" x="460" y="170" width="120" height="44" rx="8"/><text class="sub" x="520" y="196" text-anchor="middle">локальный процесс</text>
+          <rect class="box" x="616" y="170" width="140" height="44" rx="8"/><text x="686" y="192" text-anchor="middle">output</text><text class="sub" x="686" y="207" text-anchor="middle">от хоста</text>
+          <path class="arr" d="M106 52 H138"/><path class="arr" d="M270 52 H302"/><path class="arr" d="M424 52 H458"/><path class="arr" d="M580 52 H614"/><path class="arr" d="M756 52 H788"/>
+          <path class="arr" d="M364 74 V168"/><path class="arr" d="M424 192 H458"/><path class="arr" d="M580 192 H614"/><path class="arr" d="M686 170 V76"/>
+          <text class="sub" x="372" y="125">адрес этого хоста</text><text class="sub" x="440" y="22">чужой адрес (ip_forward = 1)</text>
+        </svg>
+      </div>
+      <p>Хуки с одинаковым именем срабатывают по возрастанию <code>priority</code>. <code>accept</code> в одной базовой цепочке не спасает от <code>drop</code> в другой на том же хуке. Чтобы пакет прошёл, его должны принять все цепочки, через которые он идёт.</p>
+    </div>
+    <div class="card">
+      <h2>Скелет файла</h2>
+<pre>#!/usr/sbin/nft -f
+flush ruleset
+
+define ADMIN = 10.10.0.0/24
+
+table inet filter {
+  set blocklist {
+    type ipv4_addr; flags interval
+    elements = { 192.0.2.0/24 }
+  }
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    ip saddr @blocklist drop
+    ip saddr $ADMIN tcp dport 22 accept
+  }
+}</pre>
+    </div>
+    <div class="card">
+      <h2>Приоритеты</h2>
+      <table>
+        <tr><th>Имя</th><th>Значение</th><th>Зачем</th></tr>
+        <tr><td><code>raw</code></td><td>−300</td><td>до conntrack, notrack</td></tr>
+        <tr><td><code>mangle</code></td><td>−150</td><td>метки, изменение пакета</td></tr>
+        <tr><td><code>dstnat</code></td><td>−100</td><td>DNAT в prerouting/output</td></tr>
+        <tr><td><code>filter</code></td><td>0</td><td>обычная фильтрация</td></tr>
+        <tr><td><code>security</code></td><td>50</td><td>SELinux-метки</td></tr>
+        <tr><td><code>srcnat</code></td><td>100</td><td>SNAT в postrouting/input</td></tr>
+      </table>
+      <p>Conntrack определяет состояние на приоритете −200: цепочки <code>raw</code> видят пакет раньше.</p>
+    </div>
+    <div class="card">
+      <h2>Выражения (match)</h2>
+      <table>
+        <tr><td><code>ip saddr 10.0.0.0/8</code></td><td>адрес источника; есть daddr</td></tr>
+        <tr><td><code>ip saddr != 10.0.0.1-10.0.0.9</code></td><td>отрицание, диапазон</td></tr>
+        <tr><td><code>tcp dport { 80, 443 }</code></td><td>порт; есть sport, udp, th</td></tr>
+        <tr><td><code>tcp dport 1000-2000</code></td><td>диапазон портов</td></tr>
+        <tr><td><code>tcp dport &lt; 1024</code></td><td>сравнение</td></tr>
+        <tr><td><code>tcp flags syn</code></td><td>установлен флаг SYN</td></tr>
+        <tr><td><code>tcp flags &amp; (syn|ack) == syn</code></td><td>маска и точное сравнение</td></tr>
+        <tr><td><code>meta l4proto { tcp, udp }</code></td><td>протокол L4</td></tr>
+        <tr><td><code>iifname "eth0"</code></td><td>входящий интерфейс; oifname — исходящий</td></tr>
+        <tr><td><code>icmp type echo-request</code></td><td>тип ICMP</td></tr>
+        <tr><td><code>ct state established,related</code></td><td>состояние conntrack</td></tr>
+        <tr><td><code>ct status dnat</code></td><td>к соединению применён DNAT</td></tr>
+        <tr><td><code>ip saddr @blocklist</code></td><td>поиск в именованном множестве</td></tr>
+        <tr><td><code>meta mark 0x1</code></td><td>метка пакета</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Действия и вердикты</h2>
+      <table>
+        <tr><td><code>accept</code> · <code>drop</code></td><td>окончательное решение для цепочки</td></tr>
+        <tr><td><code>reject</code></td><td>отказ ICMP port-unreachable</td></tr>
+        <tr><td><code>reject with tcp reset</code></td><td>отказ TCP RST</td></tr>
+        <tr><td><code>jump имя</code> · <code>goto имя</code></td><td>переход с возвратом / без</td></tr>
+        <tr><td><code>return</code> · <code>continue</code></td><td>вернуться / идти дальше</td></tr>
+        <tr><td><code>counter</code></td><td>счётчик пакетов и байт</td></tr>
+        <tr><td><code>log prefix "x: "</code></td><td>запись в журнал ядра</td></tr>
+        <tr><td><code>limit rate 5/second</code></td><td>совпадает, пока не превышен лимит</td></tr>
+        <tr><td><code>meta mark set 0x1</code></td><td>поставить метку</td></tr>
+        <tr><td><code>dnat ip to 10.0.0.5:80</code></td><td>подмена получателя</td></tr>
+        <tr><td><code>snat ip to 203.0.113.10</code></td><td>подмена источника</td></tr>
+        <tr><td><code>masquerade</code></td><td>SNAT на адрес oif</td></tr>
+        <tr><td><code>redirect to :8080</code></td><td>DNAT на сам хост</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>На живой системе</h2>
+<pre><span class="c"># проверить синтаксис, ничего не применяя</span>
+nft -c -f /etc/nftables.conf
+<span class="c"># применить атомарно</span>
+nft -f /etc/nftables.conf
+nft list ruleset
+nft -a list chain inet filter input   <span class="c"># с handle</span>
+<span class="c"># трассировка, как в тренажёре</span>
+nft add rule inet filter prerouting \
+  ip saddr 198.51.100.7 meta nftrace set 1
+nft monitor trace
+<span class="c"># страховка от потери доступа</span>
+nft -f new.conf; sleep 60; nft -f old.conf</pre>
+    </div>
+    <div class="card">
+      <h2>Что моделирует тренажёр</h2>
+      <p>Только IPv4. Семейства <code>ip</code> и <code>inet</code>, хуки prerouting / input / forward / output / postrouting, цепочки filter и nat с приоритетами, conntrack (new, established, повтор первого пакета), DNAT, SNAT, masquerade, redirect с обратной трансляцией ответов, анонимные и именованные множества, define, jump, goto, return, log, counter, limit, reject.</p>
+      <p>Не моделируются: IPv6-трафик (правила ip6 разбираются, но не совпадают), map/vmap, конкатенации, flowtable, таймауты conntrack, фрагментация. <code>limit</code> упрощён: пакеты одной пачки приходят одновременно, проходят первые <i>burst</i> штук.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+// ===== nft-sim: парсер подмножества nftables и симулятор netfilter (IPv4) =====
+const NFT = (() => {
+  'use strict';
+
+  class NftError extends Error {
+    constructor(msg, tok, hint) {
+      super(msg);
+      this.tok = tok || null;
+      this.hint = hint || '';
+    }
+  }
+
+  const FAMILIES = ['ip', 'ip6', 'inet', 'arp', 'bridge', 'netdev'];
+  const PRIO = { raw: -300, mangle: -150, dstnat: -100, filter: 0, security: 50, srcnat: 100 };
+  const L3_HOOKS = ['prerouting', 'input', 'forward', 'output', 'postrouting'];
+  const SERVICES = {
+    ftp: 21, ssh: 22, telnet: 23, smtp: 25, domain: 53, http: 80, kerberos: 88, pop3: 110,
+    ntp: 123, 'netbios-ssn': 139, imap: 143, snmp: 161, bgp: 179, ldap: 389, https: 443,
+    'microsoft-ds': 445, smtps: 465, syslog: 514, submission: 587, ldaps: 636, rsync: 873,
+    imaps: 993, pop3s: 995, openvpn: 1194, mysql: 3306, 'ms-wbt-server': 3389,
+    postgresql: 5432, 'http-alt': 8080
+  };
+  const PROTOS = { icmp: 1, igmp: 2, tcp: 6, udp: 17, gre: 47, esp: 50, ah: 51, icmpv6: 58, sctp: 132 };
+  const ICMP_TYPES = {
+    'echo-reply': 0, 'destination-unreachable': 3, 'source-quench': 4, redirect: 5,
+    'echo-request': 8, 'router-advertisement': 9, 'router-solicitation': 10,
+    'time-exceeded': 11, 'parameter-problem': 12, 'timestamp-request': 13,
+    'timestamp-reply': 14, 'info-request': 15, 'info-reply': 16,
+    'address-mask-request': 17, 'address-mask-reply': 18
+  };
+  const ICMP6_TYPES = ['destination-unreachable', 'packet-too-big', 'time-exceeded',
+    'parameter-problem', 'echo-request', 'echo-reply', 'mld-listener-query',
+    'mld-listener-report', 'mld-listener-done', 'nd-router-solicit', 'nd-router-advert',
+    'nd-neighbor-solicit', 'nd-neighbor-advert', 'nd-redirect', 'mld2-listener-report'];
+  const CT_STATE = { invalid: 1, established: 2, related: 4, new: 8, untracked: 64 };
+  const CT_STATUS = { expected: 1, 'seen-reply': 2, assured: 4, confirmed: 8, snat: 16, dnat: 32, dying: 512 };
+  const TCP_FLAGS = { fin: 1, syn: 2, rst: 4, psh: 8, ack: 16, urg: 32, ecn: 64, cwr: 128 };
+  const PKTTYPE = { host: 0, broadcast: 1, multicast: 2, other: 3 };
+  const NFPROTO = { ipv4: 2, ipv6: 10 };
+  const CTDIR = { original: 0, reply: 1 };
+  const DICTS = {
+    ctstate: CT_STATE, ctstatus: CT_STATUS, tcpflags: TCP_FLAGS, icmptype: ICMP_TYPES,
+    pkttype: PKTTYPE, nfproto: NFPROTO, ctdir: CTDIR
+  };
+  const DT_NAMES = {
+    ipv4: 'IPv4-адрес (ipv4_addr)', ipv6: 'IPv6-адрес (ipv6_addr)', port: 'порт (inet_service)',
+    proto: 'протокол (inet_proto)', ifname: 'имя интерфейса (ifname)', ctstate: 'состояние ct (ct_state)',
+    ctstatus: 'статус ct (ct_status)', ctdir: 'направление ct', icmptype: 'тип ICMP (icmp_type)',
+    icmp6type: 'тип ICMPv6', tcpflags: 'TCP-флаги', num: 'число', nfproto: 'семейство (nf_proto)',
+    pkttype: 'тип пакета (pkt_type)'
+  };
+  const BITMASK = new Set(['ctstate', 'ctstatus', 'tcpflags']);
+  const SET_TYPES = {
+    ipv4_addr: 'ipv4', ipv6_addr: 'ipv6', inet_service: 'port', inet_proto: 'proto',
+    ifname: 'ifname', mark: 'num', ct_state: 'ctstate', icmp_type: 'icmptype'
+  };
+
+  const tcpOnly = f => p => p.proto === 6 ? p[f] : undefined;
+  const udpOnly = f => p => p.proto === 17 ? p[f] : undefined;
+  const thOnly = f => p => (p.proto === 6 || p.proto === 17) ? p[f] : undefined;
+  const none = () => undefined;
+  const SEL = {
+    'ip saddr': { dt: 'ipv4', get: p => p.src },
+    'ip daddr': { dt: 'ipv4', get: p => p.dst },
+    'ip protocol': { dt: 'proto', get: p => p.proto },
+    'ip6 saddr': { dt: 'ipv6', get: none },
+    'ip6 daddr': { dt: 'ipv6', get: none },
+    'ip6 nexthdr': { dt: 'proto', get: none },
+    'tcp sport': { dt: 'port', get: tcpOnly('sport'), l4: 6 },
+    'tcp dport': { dt: 'port', get: tcpOnly('dport'), l4: 6 },
+    'tcp flags': { dt: 'tcpflags', get: tcpOnly('flags'), l4: 6 },
+    'udp sport': { dt: 'port', get: udpOnly('sport'), l4: 17 },
+    'udp dport': { dt: 'port', get: udpOnly('dport'), l4: 17 },
+    'th sport': { dt: 'port', get: thOnly('sport'), l4: 'th' },
+    'th dport': { dt: 'port', get: thOnly('dport'), l4: 'th' },
+    'icmp type': { dt: 'icmptype', get: p => p.proto === 1 ? p.icmpType : undefined, l4: 1 },
+    'icmp code': { dt: 'num', get: p => p.proto === 1 ? p.icmpCode : undefined, l4: 1 },
+    'icmpv6 type': { dt: 'icmp6type', get: none },
+    'meta l4proto': { dt: 'proto', get: p => p.proto },
+    'meta nfproto': { dt: 'nfproto', get: () => 2 },
+    'meta iifname': { dt: 'ifname', get: p => p.iif || undefined },
+    'meta oifname': { dt: 'ifname', get: p => p.oif || undefined },
+    'meta iif': { dt: 'ifname', get: p => p.iif || undefined },
+    'meta oif': { dt: 'ifname', get: p => p.oif || undefined },
+    'meta mark': { dt: 'num', get: p => p.mark },
+    'meta pkttype': { dt: 'pkttype', get: p => p.pkttype },
+    'ct state': { dt: 'ctstate', get: p => p.ctstate },
+    'ct status': { dt: 'ctstatus', get: p => p.ctstatus },
+    'ct direction': { dt: 'ctdir', get: p => p.ctdir },
+    'ct mark': { dt: 'num', get: p => p.ctmark }
+  };
+  const SEL_HEADS = ['ip', 'ip6', 'tcp', 'udp', 'th', 'icmp', 'icmpv6', 'meta', 'ct'];
+  const META_BARE = ['iif', 'oif', 'iifname', 'oifname', 'mark', 'pkttype'];
+  const UNSUPPORTED = ['queue', 'notrack', 'quota', 'fib', 'socket', 'osf', 'synproxy', 'flow',
+    'dup', 'fwd', 'numgen', 'jhash', 'symhash', 'rt', 'exthdr', 'tproxy', 'vmap', 'map', 'ether',
+    'vlan', 'arp', 'sctp', 'dccp', 'ah', 'esp', 'comp', 'udplite', 'dst', 'hbh', 'frag', 'mh',
+    'rh', 'srh', 'ipsec', 'xt', 'last', 'secmark', 'update', 'add'];
+
+  // ---------- IP helpers ----------
+  function ipToInt(s) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+    if (!m) return null;
+    const p = m.slice(1).map(Number);
+    if (p.some(x => x > 255)) return null;
+    return ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+  }
+  function intToIp(n) {
+    return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+  }
+  function parseIpRange(s) {
+    let m = /^([\d.]+)\/(\d{1,2})$/.exec(s);
+    if (m) {
+      const base = ipToInt(m[1]); const bits = +m[2];
+      if (base === null || bits > 32) return null;
+      const mask = bits === 0 ? 0 : (0xFFFFFFFF << (32 - bits)) >>> 0;
+      const lo = (base & mask) >>> 0;
+      return { lo, hi: (lo | (~mask >>> 0)) >>> 0, range: bits < 32 };
+    }
+    m = /^([\d.]+)-([\d.]+)$/.exec(s);
+    if (m) {
+      const lo = ipToInt(m[1]), hi = ipToInt(m[2]);
+      if (lo === null || hi === null || hi < lo) return null;
+      return { lo, hi, range: true };
+    }
+    const v = ipToInt(s);
+    return v === null ? null : { lo: v, hi: v, range: false };
+  }
+  function inNet(ip, cidr) {
+    const r = parseIpRange(cidr);
+    return r && ip >= r.lo && ip <= r.hi;
+  }
+
+  // ---------- tokenizer ----------
+  function tokenize(src) {
+    const toks = [];
+    let i = 0, line = 1, col = 1;
+    const push = (t, v, len) => toks.push({ t, v, line, col, pos: i, len });
+    const isWord = c => /[A-Za-z0-9_.\-\/:*]/.test(c);
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '\n') { push('nl', '\n', 1); i++; line++; col = 1; continue; }
+      if (c === ' ' || c === '\t' || c === '\r') { i++; col++; continue; }
+      if (c === '\\' && src[i + 1] === '\n') { i += 2; line++; col = 1; continue; }
+      if (c === '#') { while (i < src.length && src[i] !== '\n') { i++; col++; } continue; }
+      if (c === '"') {
+        let j = i + 1;
+        while (j < src.length && src[j] !== '"' && src[j] !== '\n') j++;
+        if (src[j] !== '"') throw new NftError('незакрытая строка: не хватает кавычки «"»', { line, col, len: j - i });
+        push('str', src.slice(i + 1, j), j - i + 1);
+        col += j - i + 1; i = j + 1; continue;
+      }
+      const two = src.substr(i, 2);
+      if (['==', '!=', '<=', '>='].includes(two)) { push('p', two, 2); i += 2; col += 2; continue; }
+      if ('{}();,=@$&|<>!'.includes(c)) { push('p', c, 1); i++; col++; continue; }
+      if (isWord(c)) {
+        let j = i;
+        while (j < src.length && isWord(src[j])) j++;
+        push('w', src.slice(i, j), j - i);
+        col += j - i; i = j; continue;
+      }
+      throw new NftError(`неожиданный символ «${c}»`, { line, col, len: 1 });
+    }
+    toks.push({ t: 'eof', v: '', line, col, pos: i, len: 0 });
+    return toks;
+  }
+
+  const desc = t => t.t === 'eof' ? 'конец файла' : t.t === 'nl' ? 'конец строки' : t.t === 'str' ? `"${t.v}"` : `«${t.v}»`;
+
+  // ---------- parser ----------
+  let chainSeq = 0, ruleSeq = 0;
+
+  class Parser {
+    constructor(src) {
+      this.src = src;
+      this.toks = tokenize(src);
+      this.pos = 0;
+      this.defines = {};
+      this.rs = { tables: [], warnings: [], defines: this.defines };
+    }
+    expandAt(i) {
+      let guard = 0;
+      while (this.toks[i] && this.toks[i].t === 'p' && this.toks[i].v === '$') {
+        if (++guard > 50) throw new NftError('рекурсивный define', this.toks[i]);
+        const ref = this.toks[i], name = this.toks[i + 1];
+        if (!name || name.t !== 'w') throw new NftError('после «$» ожидалось имя переменной', ref);
+        const def = this.defines[name.v];
+        if (!def) throw new NftError(`unknown identifier '${name.v}': переменная $${name.v} не объявлена`, { ...ref, len: name.len + 1 },
+          `Объявите её выше: define ${name.v} = …`);
+        const copy = def.map(t => ({ ...t, line: ref.line, col: ref.col, pos: ref.pos, len: name.len + 1, fromVar: name.v }));
+        this.toks.splice(i, 2, ...copy);
+      }
+    }
+    peek(o = 0) { this.expandAt(this.pos + o); return this.toks[Math.min(this.pos + o, this.toks.length - 1)]; }
+    next() { const t = this.peek(); if (t.t !== 'eof') this.pos++; this.last = t; return t; }
+    isW(v) { const t = this.peek(); return t.t === 'w' && (v === undefined || t.v === v); }
+    isP(v) { const t = this.peek(); return t.t === 'p' && t.v === v; }
+    acceptW(v) { if (this.isW(v)) return this.next(); return null; }
+    acceptP(v) { if (this.isP(v)) return this.next(); return null; }
+    expectW(v, hint) {
+      const t = this.peek();
+      if (t.t === 'w' && (v === undefined || t.v === v)) return this.next();
+      throw new NftError(`синтаксическая ошибка: ожидалось ${v ? '«' + v + '»' : 'имя'}, встретилось ${desc(t)}`, t, hint);
+    }
+    expectP(v, hint) {
+      const t = this.peek();
+      if (t.t === 'p' && t.v === v) return this.next();
+      throw new NftError(`синтаксическая ошибка: ожидалось «${v}», встретилось ${desc(t)}`, t, hint);
+    }
+    skipSep() { while (this.peek().t === 'nl' || this.isP(';')) this.next(); }
+    skipNl() { while (this.peek().t === 'nl') this.next(); }
+    atEnd() { const t = this.peek(); return t.t === 'nl' || t.t === 'eof' || (t.t === 'p' && (t.v === ';' || t.v === '}')); }
+    unexpected(t, hint) { return new NftError(`синтаксическая ошибка: неожиданное ${desc(t)}`, t, hint); }
+
+    parseFile() {
+      for (;;) {
+        this.skipSep();
+        const t = this.peek();
+        if (t.t === 'eof') break;
+        if (t.t !== 'w') throw this.unexpected(t);
+        switch (t.v) {
+          case 'flush': this.parseFlush(); break;
+          case 'define': this.parseDefine(); break;
+          case 'table': this.next(); this.parseTableDecl(); break;
+          case 'add': case 'create': this.next(); this.parseAdd(false); break;
+          case 'insert': this.next(); this.parseAdd(true); break;
+          case 'include':
+            throw new NftError('include не поддерживается: в тренажёре весь набор правил — в одном файле', t);
+          case 'list': case 'delete': case 'destroy': case 'reset': case 'monitor': case 'replace': case 'rename': case 'describe':
+            throw new NftError(`команда «${t.v}» выполняется в шелле (nft ${t.v} …), а не в файле правил`, t,
+              'Здесь пишется содержимое файла для nft -f: table/chain/set, add rule, define, flush.');
+          default:
+            throw this.unexpected(t, 'На верхнем уровне ожидается table, define, flush, add или insert.');
+        }
+      }
+      this.link();
+      return this.rs;
+    }
+
+    parseFlush() {
+      this.next();
+      const t = this.next();
+      if (t.v === 'ruleset') { this.rs.tables = []; return; }
+      if (t.v === 'table') { const tb = this.tableRef(false); tb.chains.forEach(c => (c.rules = [])); return; }
+      if (t.v === 'chain') { const tb = this.tableRef(false); const n = this.expectW(); const ch = tb.chains.get(n.v); if (!ch) throw new NftError(`цепочка ${n.v} не найдена`, n); ch.rules = []; return; }
+      if (t.v === 'set') { const tb = this.tableRef(false); const n = this.expectW(); const s = tb.sets.get(n.v); if (!s) throw new NftError(`множество ${n.v} не найдено`, n); s.elems = []; return; }
+      throw this.unexpected(t, 'flush ruleset | flush table <семейство> <имя> | flush chain … | flush set …');
+    }
+
+    parseDefine() {
+      this.next();
+      const name = this.expectW();
+      this.expectP('=');
+      const toks = [];
+      let depth = 0;
+      for (;;) {
+        const t = this.toks[this.pos];
+        if (t.t === 'eof') break;
+        if (t.t === 'nl' && depth === 0) break;
+        if (t.t === 'p' && t.v === ';' && depth === 0) break;
+        if (t.t === 'p' && t.v === '{') depth++;
+        if (t.t === 'p' && t.v === '}') depth--;
+        if (t.t === 'p' && t.v === '$') { this.expandAt(this.pos); continue; }
+        if (t.t !== 'nl') toks.push(t);
+        this.pos++;
+      }
+      if (!toks.length) throw new NftError(`пустое значение для define ${name.v}`, name);
+      this.defines[name.v] = toks;
+    }
+
+    familyAndName() {
+      let fam = 'ip';
+      const a = this.peek(), b = this.peek(1);
+      if (a.t === 'w' && FAMILIES.includes(a.v) && b.t === 'w') { fam = a.v; this.next(); }
+      const name = this.expectW(undefined, 'Пример: table inet filter { … }');
+      return { fam, name };
+    }
+    tableRef(create) {
+      const { fam, name } = this.familyAndName();
+      return this.getTable(fam, name, create);
+    }
+    getTable(fam, nameTok, create) {
+      let tb = this.rs.tables.find(t => t.family === fam && t.name === nameTok.v);
+      if (!tb) {
+        if (!create) throw new NftError(`таблица ${fam} ${nameTok.v} не найдена`, nameTok,
+          'Сначала объявите таблицу: table ' + fam + ' ' + nameTok.v + ' { … }');
+        tb = { family: fam, name: nameTok.v, chains: new Map(), sets: new Map(), line: nameTok.line };
+        this.rs.tables.push(tb);
+        if (!['ip', 'inet'].includes(fam)) this.rs.warnings.push(`Таблица ${fam} ${nameTok.v}: тренажёр гоняет только IPv4-пакеты, цепочки этого семейства не сработают.`);
+      }
+      return tb;
+    }
+
+    parseTableDecl() {
+      const { fam, name } = this.familyAndName();
+      const tb = this.getTable(fam, name, true);
+      this.expectP('{', 'После имени таблицы открывается блок: table inet filter {');
+      for (;;) {
+        this.skipSep();
+        const t = this.peek();
+        if (this.acceptP('}')) break;
+        if (t.t === 'eof') throw new NftError('не хватает закрывающей «}» у таблицы ' + tb.name, t);
+        if (t.t !== 'w') throw this.unexpected(t);
+        if (t.v === 'chain') { this.next(); this.parseChainDecl(tb); }
+        else if (t.v === 'set') { this.next(); this.parseSetDecl(tb); }
+        else if (t.v === 'map') throw new NftError('map/vmap пока не поддерживаются тренажёром', t, 'Используйте set и отдельные правила.');
+        else if (t.v === 'flags' || t.v === 'comment') { this.next(); while (!this.atEnd()) this.next(); }
+        else throw this.unexpected(t, 'Внутри таблицы ожидается chain или set.');
+      }
+    }
+
+    getChain(tb, nameTok, create) {
+      let ch = tb.chains.get(nameTok.v);
+      if (!ch) {
+        if (!create) throw new NftError(`цепочка ${nameTok.v} не найдена в таблице ${tb.family} ${tb.name}`, nameTok);
+        ch = { name: nameTok.v, table: tb, base: false, type: null, hook: null, prio: 0, policy: 'accept', rules: [], line: nameTok.line, order: chainSeq++, tok: nameTok };
+        tb.chains.set(nameTok.v, ch);
+      }
+      return ch;
+    }
+
+    parseChainDecl(tb) {
+      const name = this.expectW(undefined, 'Пример: chain input { … }');
+      const ch = this.getChain(tb, name, true);
+      this.expectP('{');
+      this.parseChainBody(ch);
+    }
+
+    parseChainBody(ch) {
+      for (;;) {
+        this.skipSep();
+        const t = this.peek();
+        if (this.acceptP('}')) break;
+        if (t.t === 'eof') throw new NftError(`не хватает закрывающей «}» у цепочки ${ch.name}`, t);
+        if (t.t === 'w' && t.v === 'type') { this.parseHookSpec(ch); continue; }
+        if (t.t === 'w' && t.v === 'policy') {
+          this.next();
+          const p = this.expectW();
+          if (!['accept', 'drop'].includes(p.v)) throw new NftError(`policy может быть только accept или drop, а не «${p.v}»`, p);
+          if (!ch.base) throw new NftError('policy задаётся только у базовой цепочки (с type … hook …)', t, 'Сначала строка type filter hook input priority filter;');
+          ch.policy = p.v;
+          continue;
+        }
+        if (t.t === 'w' && t.v === 'comment' && (this.peek(1).t === 'str')) { this.next(); this.next(); continue; }
+        this.parseRule(ch, false);
+      }
+    }
+
+    parseHookSpec(ch) {
+      const typeTok = this.next();
+      const type = this.expectW(undefined, 'type filter | type nat | type route');
+      if (!['filter', 'nat', 'route'].includes(type.v)) throw new NftError(`неизвестный тип цепочки «${type.v}»`, type, 'Бывают: filter, nat, route.');
+      this.expectW('hook', 'Полная форма: type filter hook input priority filter;');
+      const hook = this.expectW();
+      const fam = ch.table.family;
+      const okHooks = fam === 'netdev' ? ['ingress', 'egress'] : fam === 'arp' ? ['input', 'output'] : L3_HOOKS.concat(fam === 'inet' ? ['ingress'] : []);
+      if (!okHooks.includes(hook.v)) throw new NftError(`хук «${hook.v}» недоступен в семействе ${fam}`, hook, 'Допустимо: ' + okHooks.join(', '));
+      if (this.acceptW('device')) { this.next(); }
+      if (!this.isW('priority')) throw new NftError('у базовой цепочки обязателен priority', this.peek(), 'Добавьте: priority filter; (или число, например priority 0;)');
+      this.next();
+      const pt = this.expectW();
+      let prio;
+      if (pt.v in PRIO) prio = PRIO[pt.v];
+      else if (/^-?\d+$/.test(pt.v)) prio = +pt.v;
+      else throw new NftError(`непонятный priority «${pt.v}»`, pt, 'Число или имя: raw, mangle, dstnat, filter, security, srcnat.');
+      if (pt.v in PRIO && this.isW() && /^[-]\d+$/.test(this.peek().v)) prio += +this.next().v;
+      if (type.v === 'nat' && !['prerouting', 'input', 'output', 'postrouting'].includes(hook.v))
+        throw new NftError(`цепочка type nat не может висеть на hook ${hook.v}`, hook, 'NAT-цепочки: prerouting/output (dnat), postrouting/input (snat, masquerade).');
+      ch.base = true; ch.type = type.v; ch.hook = hook.v; ch.prio = prio; ch.hookLine = typeTok.line;
+      this.acceptP(';');
+    }
+
+    parseSetDecl(tb) {
+      const name = this.expectW();
+      if (tb.sets.has(name.v)) throw new NftError(`множество ${name.v} уже объявлено`, name);
+      const set = { name: name.v, dt: null, flags: [], elems: [], tok: name, table: tb };
+      tb.sets.set(name.v, set);
+      this.expectP('{');
+      this.parseSetBody(set);
+    }
+
+    parseSetBody(set) {
+      for (;;) {
+        this.skipSep();
+        const t = this.peek();
+        if (this.acceptP('}')) break;
+        if (t.t === 'eof') throw new NftError(`не хватает «}» у множества ${set.name}`, t);
+        if (t.t !== 'w') throw this.unexpected(t);
+        this.next();
+        switch (t.v) {
+          case 'type': {
+            const ty = this.expectW();
+            if (this.isW('.')) throw new NftError('конкатенации типов пока не поддерживаются', this.peek());
+            if (!SET_TYPES[ty.v]) throw new NftError(`неизвестный тип множества «${ty.v}»`, ty, 'Поддерживаются: ' + Object.keys(SET_TYPES).join(', '));
+            set.dt = SET_TYPES[ty.v];
+            break;
+          }
+          case 'typeof': {
+            const a = this.expectW(), b = this.peek();
+            let key = META_BARE.includes(a.v) ? 'meta ' + a.v : a.v + ' ' + b.v;
+            if (!META_BARE.includes(a.v)) this.next();
+            if (!SEL[key]) throw new NftError(`typeof: непонятное выражение «${key}»`, a);
+            set.dt = SEL[key].dt;
+            break;
+          }
+          case 'flags':
+            do { set.flags.push(this.expectW().v); } while (this.acceptP(','));
+            break;
+          case 'elements':
+            if (!set.dt) throw new NftError('сначала укажите type множества, потом elements', t);
+            this.expectP('=');
+            this.parseElements(set);
+            break;
+          case 'timeout': case 'gc-interval': case 'size': case 'policy': this.expectW(); break;
+          case 'counter': case 'auto-merge': break;
+          case 'comment': this.next(); break;
+          default: throw this.unexpected(t, 'В множестве ожидается type, flags, elements.');
+        }
+      }
+    }
+
+    parseElements(set) {
+      this.expectP('{');
+      for (;;) {
+        this.skipNl();
+        if (this.acceptP('}')) break;
+        const t = this.peek();
+        const e = this.parseElem(set.dt);
+        if (e.range && !set.flags.includes('interval'))
+          throw new NftError('Set member cannot be range, missing interval flag on declaration', t,
+            `Диапазоны и подсети в именованном множестве требуют flags interval; в множестве ${set.name}.`);
+        set.elems.push(e);
+        this.skipNl();
+        if (this.acceptP(',')) continue;
+        this.skipNl();
+        if (this.acceptP('}')) break;
+        throw this.unexpected(this.peek(), 'Элементы разделяются запятыми: { a, b, c }');
+      }
+    }
+
+    parseAdd(insert) {
+      const what = this.expectW();
+      if (what.v === 'table') {
+        const { fam, name } = this.familyAndName();
+        this.getTable(fam, name, true);
+        if (this.acceptP('{')) { this.skipSep(); this.expectP('}', 'Цепочки добавляйте отдельно: add chain …'); }
+        return;
+      }
+      if (what.v === 'chain') {
+        const tb = this.tableRef(false);
+        const n = this.expectW();
+        const ch = this.getChain(tb, n, true);
+        if (this.acceptP('{')) this.parseChainBody(ch);
+        return;
+      }
+      if (what.v === 'rule') {
+        const tb = this.tableRef(false);
+        const n = this.expectW();
+        const ch = this.getChain(tb, n, false);
+        this.parseRule(ch, insert);
+        return;
+      }
+      if (what.v === 'set') {
+        const tb = this.tableRef(false);
+        this.parseSetDecl(tb);
+        return;
+      }
+      if (what.v === 'element') {
+        const tb = this.tableRef(false);
+        const n = this.expectW();
+        const set = tb.sets.get(n.v);
+        if (!set) throw new NftError(`множество ${n.v} не найдено`, n);
+        this.parseElements(set);
+        return;
+      }
+      throw this.unexpected(what, 'add table | add chain | add rule | add set | add element');
+    }
+
+    parseRule(ch, insert) {
+      const start = this.peek();
+      const items = [];
+      const ctx = { l4: null, terminal: null };
+      while (!this.atEnd()) {
+        if (ctx.terminal && !this.isW('comment'))
+          throw new NftError(`после вердикта «${ctx.terminal}» правило должно заканчиваться`, this.peek(),
+            'Вердикт (accept, drop, reject, jump …) ставится в самом конце правила.');
+        const it = this.parseItem(ctx);
+        if (it) items.push(it);
+      }
+      if (!items.length) return;
+      const endTok = this.last;
+      const rule = {
+        id: ruleSeq++, items, chain: ch, line: start.line, hits: 0,
+        text: this.src.slice(start.pos, endTok.pos + endTok.len).replace(/\s*\\\n\s*/g, ' ')
+      };
+      if (insert) ch.rules.unshift(rule); else ch.rules.push(rule);
+    }
+
+    parseItem(ctx) {
+      const t = this.peek();
+      if (t.t !== 'w') throw this.unexpected(t);
+      const v = t.v;
+      if (['accept', 'drop', 'continue', 'return'].includes(v)) { this.next(); ctx.terminal = v; return { k: 'verdict', v, tok: t }; }
+      if (v === 'jump' || v === 'goto') {
+        this.next();
+        const target = this.expectW(undefined, `${v} <имя цепочки>`);
+        ctx.terminal = v;
+        return { k: 'verdict', v, target: target.v, tok: target };
+      }
+      if (v === 'reject') {
+        this.next();
+        let w = { type: 'icmp', code: 'port-unreachable', text: 'icmp port-unreachable' };
+        if (this.acceptW('with')) {
+          const a = this.expectW();
+          if (a.v === 'tcp') { this.expectW('reset'); w = { type: 'tcp', text: 'tcp reset' }; }
+          else if (a.v === 'icmp' || a.v === 'icmpx' || a.v === 'icmpv6') {
+            this.acceptW('type');
+            const c = this.expectW();
+            w = { type: a.v, code: c.v, text: `${a.v} ${c.v}` };
+          } else throw this.unexpected(a, 'reject with tcp reset | reject with icmp type <тип> | reject with icmpx type <тип>');
+        }
+        ctx.terminal = 'reject';
+        return { k: 'reject', with: w, tok: t, needTcp: w.type === 'tcp' && ctx.l4 !== 6 };
+      }
+      if (v === 'counter') {
+        this.next();
+        if (this.acceptW('packets')) { this.expectW(); this.expectW('bytes'); this.expectW(); }
+        return { k: 'counter', tok: t };
+      }
+      if (v === 'log') {
+        this.next();
+        const it = { k: 'log', prefix: '', tok: t };
+        for (;;) {
+          if (this.acceptW('prefix')) { const p = this.next(); it.prefix = p.v; continue; }
+          if (this.acceptW('level') || this.acceptW('group') || this.acceptW('snaplen') || this.acceptW('queue-threshold')) { this.next(); continue; }
+          if (this.acceptW('flags')) { do { this.next(); } while (this.acceptP(',')); continue; }
+          break;
+        }
+        return it;
+      }
+      if (v === 'limit') {
+        this.next();
+        this.expectW('rate', 'limit rate 10/second');
+        const over = !!this.acceptW('over');
+        const r = this.expectW(undefined, 'Например: 10/second');
+        let m = /^(\d+)\/(second|minute|hour|day|week)$/.exec(r.v);
+        if (!m && /^\d+$/.test(r.v) && this.isW() && /^\/(second|minute|hour|day|week)$/.test(this.peek().v)) {
+          m = [null, r.v, this.next().v.slice(1)];
+        }
+        if (!m) throw new NftError(`непонятная скорость «${r.v}»`, r, 'Формат: N/second | N/minute | N/hour | N/day. Байтовые лимиты тренажёр не поддерживает.');
+        let burst = 5;
+        if (this.acceptW('burst')) {
+          const b = this.expectW();
+          if (!/^\d+$/.test(b.v)) throw new NftError('burst должен быть числом', b);
+          burst = +b.v;
+          this.acceptW('packets');
+        }
+        return { k: 'limit', rate: +m[1], unit: m[2], burst, over, tok: t };
+      }
+      if (v === 'snat' || v === 'dnat') {
+        this.next();
+        if (this.acceptW('ip6')) throw new NftError('IPv6-NAT тренажёр не моделирует', t);
+        this.acceptW('ip');
+        this.expectW('to', `${v} to <адрес>[:порт]`);
+        const a = this.expectW();
+        const mm = /^([\d.]+)(?::(\d+))?$/.exec(a.v);
+        if (!mm || ipToInt(mm[1]) === null) throw new NftError(`«${a.v}» — не IPv4-адрес для ${v}`, a);
+        const port = mm[2] ? +mm[2] : null;
+        if (port !== null && ctx.l4 !== 6 && ctx.l4 !== 17 && ctx.l4 !== 'th')
+          throw new NftError('transport protocol mapping is only valid after transport protocol match', a,
+            'Порт в NAT можно указать, только если правило уже сопоставило протокол: tcp dport 8080 dnat to …');
+        ctx.terminal = v;
+        return { k: 'nat', type: v, addr: ipToInt(mm[1]), port, tok: t };
+      }
+      if (v === 'masquerade' || v === 'redirect') {
+        this.next();
+        let port = null;
+        if (this.acceptW('to')) {
+          const p = this.expectW();
+          const mm = /^:?(\d+)$/.exec(p.v);
+          if (!mm) throw new NftError(`ожидался порт вида :8080, встретилось «${p.v}»`, p);
+          port = +mm[1];
+          if (ctx.l4 !== 6 && ctx.l4 !== 17 && ctx.l4 !== 'th')
+            throw new NftError('transport protocol mapping is only valid after transport protocol match', p,
+              'Сначала сопоставьте протокол: tcp dport 80 redirect to :8080');
+        }
+        while (['random', 'persistent', 'fully-random'].includes(this.peek().v)) { this.next(); this.acceptP(','); }
+        ctx.terminal = v;
+        return { k: 'nat', type: v, port, tok: t };
+      }
+      if (v === 'comment') {
+        this.next();
+        const s = this.next();
+        if (s.t !== 'str' && s.t !== 'w') throw new NftError('после comment ожидается строка в кавычках', s);
+        return null;
+      }
+      if (UNSUPPORTED.includes(v)) throw new NftError(`«${v}» тренажёр пока не поддерживает`, t);
+      return this.parseMatch(ctx);
+    }
+
+    parseMatch(ctx) {
+      const a = this.next();
+      let key;
+      if (META_BARE.includes(a.v)) key = 'meta ' + a.v;
+      else if (SEL_HEADS.includes(a.v)) {
+        const b = this.peek();
+        if (b.t !== 'w') throw this.unexpected(b, this.fieldsHint(a.v));
+        key = a.v + ' ' + b.v;
+        if (!SEL[key]) throw new NftError(`синтаксическая ошибка: у «${a.v}» нет поля «${b.v}»`, b, this.fieldsHint(a.v));
+        this.next();
+      } else {
+        throw new NftError(`синтаксическая ошибка: неожиданное «${a.v}»`, a,
+          'Правило — это выражения (ip saddr …, tcp dport …, ct state …) и в конце вердикт (accept, drop, …).');
+      }
+      if (this.isW('set')) {
+        const st = this.next();
+        if (key !== 'meta mark' && key !== 'ct mark') throw new NftError(`${key} нельзя изменять (set)`, st);
+        const val = this.expectW();
+        const n = parseNum(val.v);
+        if (n === null) throw new NftError('ожидалось число', val);
+        return { k: 'setmark', field: key === 'meta mark' ? 'mark' : 'ctmark', value: n, tok: a };
+      }
+      const sel = SEL[key];
+      let mask = null;
+      if (this.acceptP('&')) mask = this.parseMaskExpr(sel.dt);
+      let op = 'implicit';
+      const pt = this.peek();
+      if (pt.t === 'p' && ['==', '!=', '<', '>', '<=', '>='].includes(pt.v)) { op = pt.v; this.next(); }
+      if (pt.t === 'p' && pt.v === '!' ) throw new NftError('отрицание пишется как «!=»', pt, 'Пример: ip saddr != 10.0.0.0/8');
+      const rhs = this.parseRhs(sel.dt, op, mask !== null);
+      if (op !== 'implicit' && op !== '==' && op !== '!=' && rhs.kind !== 'val')
+        throw new NftError(`оператор ${op} работает только с одним значением`, pt);
+      if (sel.l4) ctx.l4 = sel.l4;
+      if ((key === 'meta l4proto' || key === 'ip protocol') && rhs.kind === 'val' && op !== '!=') ctx.l4 = rhs.elem.lo;
+      return { k: 'match', key, sel, dt: sel.dt, op, mask, rhs, tok: a };
+    }
+
+    fieldsHint(head) {
+      const f = Object.keys(SEL).filter(k => k.startsWith(head + ' ')).map(k => k.split(' ')[1]);
+      return f.length ? `Поля ${head}: ${f.join(', ')}` : '';
+    }
+
+    parseMaskExpr(dt) {
+      let m = 0;
+      const paren = !!this.acceptP('(');
+      do {
+        const t = this.next();
+        m |= this.convert(dt, t.v, t).lo;
+      } while (this.acceptP('|') || (!paren && false));
+      if (paren) this.expectP(')');
+      return m;
+    }
+
+    parseRhs(dt, op, masked) {
+      if (this.isP('{')) {
+        this.next();
+        const elems = [];
+        for (;;) {
+          this.skipNl();
+          if (this.acceptP('}')) break;
+          let e = this.parseElem(dt);
+          if (BITMASK.has(dt)) { while (this.acceptP('|')) e = { lo: e.lo | this.parseElem(dt).lo, hi: 0 }; e.hi = e.lo; }
+          elems.push(e);
+          this.skipNl();
+          if (this.acceptP(',')) continue;
+          this.skipNl();
+          if (this.acceptP('}')) break;
+          throw this.unexpected(this.peek(), 'Элементы множества разделяются запятыми: { 80, 443 }');
+        }
+        if (!elems.length) throw new NftError('пустое множество { }', this.last);
+        return { kind: 'set', elems };
+      }
+      if (this.isP('@')) {
+        this.next();
+        const n = this.expectW(undefined, 'После @ — имя множества: @blocklist');
+        return { kind: 'ref', name: n.v, tok: n };
+      }
+      if (this.atEnd()) throw new NftError('после выражения не хватает значения', this.peek());
+      const first = this.parseElem(dt);
+      if (BITMASK.has(dt) && (this.isP(',') || this.isP('|'))) {
+        let m = first.lo;
+        while (this.acceptP(',') || this.acceptP('|')) m |= this.parseElem(dt).lo;
+        return { kind: 'flags', mask: m };
+      }
+      if (this.isP(',')) throw new NftError('список значений пишется в фигурных скобках', this.peek(), 'Пример: tcp dport { 80, 443 }');
+      if (BITMASK.has(dt) && !masked) return { kind: 'flags', mask: first.lo };
+      return { kind: 'val', elem: first };
+    }
+
+    parseElem(dt) {
+      const t = this.next();
+      if (t.t !== 'w' && t.t !== 'str') throw new NftError(`ожидалось значение (${DT_NAMES[dt]}), встретилось ${desc(t)}`, t);
+      return this.convert(dt, t.v, t);
+    }
+
+    convert(dt, v, t) {
+      switch (dt) {
+        case 'ipv4': {
+          const r = parseIpRange(v);
+          if (!r) {
+            if (/^[a-z]/i.test(v)) throw new NftError(`Could not resolve hostname: «${v}» — ожидался ${DT_NAMES.ipv4}`, t, 'Тренажёр не резолвит имена: пишите адреса цифрами.');
+            throw new NftError(`«${v}» — не IPv4-адрес`, t, 'Формы: 10.0.0.1, 10.0.0.0/24, 10.0.0.1-10.0.0.9');
+          }
+          return r;
+        }
+        case 'ipv6':
+          if (!v.includes(':') || !/^[0-9a-fA-F:.\/\-]+$/.test(v)) throw new NftError(`«${v}» — не IPv6-адрес`, t);
+          return { str: v, lo: NaN, hi: NaN };
+        case 'port': {
+          const one = s => { if (/^\d+$/.test(s) && +s <= 65535) return +s; if (s in SERVICES) return SERVICES[s]; return null; };
+          const m = /^([a-z0-9-]+?)-(\d+|[a-z]+)$/i.exec(v);
+          if (one(v) !== null) { const n = one(v); return { lo: n, hi: n, range: false }; }
+          if (m && one(m[1]) !== null && one(m[2]) !== null) return { lo: one(m[1]), hi: one(m[2]), range: true };
+          throw new NftError(`«${v}» — не порт`, t, 'Номер 0–65535, диапазон 1000-2000 или имя из /etc/services (ssh, http, https, domain …).');
+        }
+        case 'proto': {
+          if (v in PROTOS) return { lo: PROTOS[v], hi: PROTOS[v] };
+          if (/^\d+$/.test(v) && +v < 256) return { lo: +v, hi: +v };
+          throw new NftError(`«${v}» — неизвестный протокол`, t, 'tcp, udp, icmp, icmpv6, gre, esp …');
+        }
+        case 'ifname':
+          if (v.length > 15) throw new NftError('имя интерфейса длиннее 15 символов', t);
+          return { str: v, wild: v.endsWith('*') };
+        case 'icmp6type':
+          if (!ICMP6_TYPES.includes(v) && !/^\d+$/.test(v)) throw new NftError(`«${v}» — неизвестный тип ICMPv6`, t);
+          return { str: v, lo: NaN, hi: NaN };
+        case 'num': {
+          const n = parseNum(v);
+          if (n !== null) return { lo: n, hi: n };
+          const m = /^(\w+)-(\w+)$/.exec(v);
+          if (m && parseNum(m[1]) !== null && parseNum(m[2]) !== null) return { lo: parseNum(m[1]), hi: parseNum(m[2]), range: true };
+          throw new NftError(`«${v}» — не число`, t);
+        }
+        default: {
+          const d = DICTS[dt];
+          if (d && v in d) return { lo: d[v], hi: d[v] };
+          if (dt === 'icmptype' && /^\d+$/.test(v)) return { lo: +v, hi: +v };
+          throw new NftError(`«${v}» — не ${DT_NAMES[dt]}`, t, d ? 'Допустимо: ' + Object.keys(d).join(', ') : '');
+        }
+      }
+    }
+
+    link() {
+      for (const tb of this.rs.tables) {
+        for (const ch of tb.chains.values()) {
+          for (const rule of ch.rules) {
+            for (const it of rule.items) {
+              if (it.k === 'match' && it.rhs.kind === 'ref') {
+                const set = tb.sets.get(it.rhs.name);
+                if (!set) throw new NftError(`Could not process rule: No such file or directory — множества @${it.rhs.name} нет в таблице ${tb.family} ${tb.name}`, it.rhs.tok,
+                  'Множество объявляется в той же таблице: set ' + it.rhs.name + ' { type …; elements = { … } }');
+                if (set.dt !== it.dt) throw new NftError(`datatype mismatch: выражение ожидает ${DT_NAMES[it.dt]}, а множество @${set.name} имеет тип ${DT_NAMES[set.dt] || '—'}`, it.rhs.tok);
+                it.rhs.set = set;
+              }
+              if (it.k === 'verdict' && (it.v === 'jump' || it.v === 'goto')) {
+                const tgt = tb.chains.get(it.target);
+                if (!tgt) throw new NftError(`Could not process rule: No such file or directory — цепочки ${it.target} нет в таблице ${tb.family} ${tb.name}`, it.tok,
+                  `Объявите обычную цепочку: chain ${it.target} { … } (без строки type/hook).`);
+                if (tgt.base) throw new NftError(`Could not process rule: Operation not supported — нельзя делать ${it.v} в базовую цепочку ${it.target}`, it.tok,
+                  'Переходы возможны только в обычные цепочки без type/hook.');
+                it.chain = tgt;
+              }
+              if (it.k === 'nat' && ch.base) {
+                const dst = it.type === 'dnat' || it.type === 'redirect';
+                const ok = ch.type === 'nat' && (dst ? ['prerouting', 'output'] : ['postrouting', 'input']).includes(ch.hook);
+                if (!ok) throw new NftError(`Could not process rule: Operation not supported — ${it.type} работает только в цепочке type nat с hook ${dst ? 'prerouting или output' : 'postrouting или input'}`, it.tok,
+                  dst ? 'chain prerouting { type nat hook prerouting priority dstnat; … }' : 'chain postrouting { type nat hook postrouting priority srcnat; … }');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function parseNum(s) {
+    if (/^0x[0-9a-f]+$/i.test(s)) return parseInt(s, 16);
+    if (/^\d+$/.test(s)) return +s;
+    return null;
+  }
+
+  function compile(src) {
+    chainSeq = 0; ruleSeq = 0;
+    const rs = new Parser(src).parseFile();
+    rs.__src = src;
+    return rs;
+  }
+
+  // ---------- packet DSL ----------
+  // [iif|-] proto src[:port] > dst[:port] [флаги] [тип icmp] [ct=invalid] [x20] [mark=0x1]
+  function parsePacket(str, topo) {
+    const parts = str.trim().split(/\s+/).filter(Boolean);
+    const fail = m => { throw new Error(m); };
+    if (parts.length < 4) fail('Формат: <iif|-> <tcp|udp|icmp> <src[:port]> > <dst[:port]> [флаги]');
+    const p = { iif: null, proto: 0, src: 0, sport: 0, dst: 0, dport: 0, flags: 0, icmpType: 8, icmpCode: 0, ctOverride: null, mark: 0, pkttype: 0, count: 1 };
+    let i = 0;
+    const ifNames = topo.ifaces.map(x => x.name);
+    if (parts[0] === '-' || parts[0] === 'local') i++;
+    else if (ifNames.includes(parts[0])) { p.iif = parts[0]; i++; }
+    else fail(`Первое поле — входящий интерфейс (${ifNames.join(', ')}) или «-» для пакета, который отправляет сам хост`);
+    const proto = parts[i++];
+    if (!['tcp', 'udp', 'icmp'].includes(proto)) fail(`Протокол «${proto}»: поддерживаются tcp, udp, icmp`);
+    p.proto = PROTOS[proto];
+    const ep = (s, what) => {
+      const m = /^([\d.]+)(?::(\d+))?$/.exec(s || '');
+      if (!m || ipToInt(m[1]) === null) fail(`${what}: «${s || ''}» — ожидался IPv4-адрес${proto !== 'icmp' ? ' с портом (1.2.3.4:80)' : ''}`);
+      if (proto !== 'icmp' && !m[2]) fail(`${what}: для ${proto} укажите порт, например ${m[1]}:443`);
+      return { ip: ipToInt(m[1]), port: m[2] ? +m[2] : 0 };
+    };
+    const s = ep(parts[i++], 'Источник');
+    if (parts[i] !== '>' && parts[i] !== '->' && parts[i] !== '→') fail('Между источником и получателем нужна стрелка «>»');
+    i++;
+    const d = ep(parts[i++], 'Получатель');
+    p.src = s.ip; p.sport = s.port; p.dst = d.ip; p.dport = d.port;
+    let hadFlags = false, hadIcmp = false;
+    for (; i < parts.length; i++) {
+      const w = parts[i];
+      let m;
+      if ((m = /^ct=(\w+)$/.exec(w))) { if (!['invalid', 'related', 'untracked'].includes(m[1])) fail('ct= может быть invalid, related или untracked'); p.ctOverride = m[1]; continue; }
+      if ((m = /^x(\d+)$/.exec(w))) { p.count = Math.min(200, Math.max(1, +m[1])); continue; }
+      if ((m = /^mark=(\w+)$/.exec(w))) { p.mark = parseNum(m[1]) || 0; continue; }
+      if ((m = /^(broadcast|multicast)$/.exec(w))) { p.pkttype = PKTTYPE[w]; continue; }
+      if (proto === 'tcp') {
+        for (const f of w.split(',')) { if (!(f in TCP_FLAGS)) fail(`Неизвестный TCP-флаг «${f}»`); p.flags |= TCP_FLAGS[f]; }
+        hadFlags = true; continue;
+      }
+      if (proto === 'icmp') {
+        if (!(w in ICMP_TYPES)) fail(`Неизвестный тип ICMP «${w}»`);
+        p.icmpType = ICMP_TYPES[w]; hadIcmp = true; continue;
+      }
+      fail(`Непонятное поле «${w}»`);
+    }
+    if (proto === 'tcp' && !hadFlags) p.flags = TCP_FLAGS.syn;
+    return p;
+  }
+
+  const flagNames = f => Object.keys(TCP_FLAGS).filter(k => f & TCP_FLAGS[k]).join(',');
+  const icmpName = n => Object.keys(ICMP_TYPES).find(k => ICMP_TYPES[k] === n) || 'type ' + n;
+  const protoName = n => Object.keys(PROTOS).find(k => PROTOS[k] === n) || String(n);
+  function ep(ip, port, proto) { return intToIp(ip) + (proto === 1 ? '' : ':' + port); }
+  function formatPacket(p) {
+    let s = `${p.iif || '-'} ${protoName(p.proto)} ${ep(p.src, p.sport, p.proto)} > ${ep(p.dst, p.dport, p.proto)}`;
+    if (p.proto === 6) s += ' ' + flagNames(p.flags);
+    if (p.proto === 1) s += ' ' + icmpName(p.icmpType);
+    if (p.ctOverride) s += ' ct=' + p.ctOverride;
+    if (p.count > 1) s += ' x' + p.count;
+    return s;
+  }
+
+  // ---------- simulation ----------
+  function newState() { return { conns: [], limits: new Map() }; }
+
+  const tupleKey = t => `${t.proto}|${t.src}|${t.sport}|${t.dst}|${t.dport}`;
+  const tupleOf = p => ({ proto: p.proto, src: p.src, sport: p.sport, dst: p.dst, dport: p.dport });
+  const reverse = t => ({ proto: t.proto, src: t.dst, sport: t.dport, dst: t.src, dport: t.sport });
+
+  function isLocal(topo, ip) {
+    return inNet(ip, '127.0.0.0/8') || topo.ifaces.some(i => i.addr && ipToInt(i.addr) === ip);
+  }
+  function route(topo, ip) {
+    if (isLocal(topo, ip)) return { local: true, oif: 'lo' };
+    const direct = topo.ifaces.find(i => i.name !== 'lo' && i.net && inNet(ip, i.net));
+    if (direct) return { local: false, oif: direct.name, how: `сеть ${direct.net} подключена к ${direct.name}` };
+    const gw = topo.ifaces.find(i => i.gw);
+    if (gw) return { local: false, oif: gw.name, how: `маршрут по умолчанию через ${gw.name}` };
+    return { local: false, oif: null };
+  }
+  const ifAddr = (topo, name) => { const i = topo.ifaces.find(x => x.name === name); return i && i.addr ? ipToInt(i.addr) : null; };
+
+  function chainsForHook(rs, hook, withNat) {
+    const out = [];
+    for (const tb of rs.tables) {
+      if (tb.family !== 'ip' && tb.family !== 'inet') continue;
+      for (const ch of tb.chains.values()) {
+        if (ch.base && ch.hook === hook && (ch.type !== 'nat' || withNat)) out.push(ch);
+      }
+    }
+    return out.sort((a, b) => a.prio - b.prio || a.order - b.order);
+  }
+
+  function matchElem(dt, v, e) {
+    if (dt === 'ifname') return e.wild ? String(v).startsWith(e.str.slice(0, -1)) : v === e.str;
+    return v >= e.lo && v <= e.hi;
+  }
+
+  function testMatch(it, p) {
+    let v = it.sel.get(p);
+    if (v === undefined || v === null) return false;
+    const neg = it.op === '!=';
+    const rhs = it.rhs;
+    if (it.mask !== null) {
+      v &= it.mask;
+      const target = rhs.kind === 'flags' ? rhs.mask : rhs.kind === 'val' ? rhs.elem.lo : null;
+      if (target === null) {
+        const inSet = rhs.elems.some(e => v === e.lo);
+        return neg ? !inSet : inSet;
+      }
+      return neg ? v !== target : v === target;
+    }
+    if (rhs.kind === 'flags') {
+      if (it.op === '==') return v === rhs.mask;
+      const any = (v & rhs.mask) !== 0;
+      return neg ? !any : any;
+    }
+    if (rhs.kind === 'val') {
+      const e = rhs.elem;
+      switch (it.op) {
+        case '<': return v < e.lo;
+        case '>': return v > e.hi;
+        case '<=': return v <= e.hi;
+        case '>=': return v >= e.lo;
+      }
+      const m = matchElem(it.dt, v, e);
+      return neg ? !m : m;
+    }
+    const elems = rhs.kind === 'set' ? rhs.elems : rhs.set.elems;
+    const exact = BITMASK.has(it.dt);
+    const m = elems.some(e => exact ? v === e.lo : matchElem(it.dt, v, e));
+    return neg ? !m : m;
+  }
+
+  function simulate(rs, topo, input, state) {
+    const steps = [];
+    const p = { ...input, oif: null, ctstatus: 0, ctdir: 0, ctmark: 0 };
+    const origTuple = tupleOf(p);
+    const logs = [];
+    let entry = null, dir = 0;
+    if (p.ctOverride) {
+      p.ctstate = CT_STATE[p.ctOverride];
+      steps.push({ t: 'ct', text: `conntrack: состояние задано тестом → ct state ${p.ctOverride}` });
+    } else {
+      const k = tupleKey(origTuple);
+      entry = state.conns.find(e => e.origKey === k);
+      if (entry) dir = 0;
+      else { entry = state.conns.find(e => e.replyKey === k); if (entry) dir = 1; }
+      if (!entry) {
+        p.ctstate = CT_STATE.new;
+        steps.push({ t: 'ct', text: 'conntrack: записи нет — первый пакет соединения → ct state new' });
+      } else if (dir === 0) {
+        p.ctstate = entry.seenReply ? CT_STATE.established : CT_STATE.new;
+        steps.push({ t: 'ct', text: entry.seenReply ? 'conntrack: известное соединение → ct state established' : 'conntrack: повтор первого пакета, ответа ещё не было → ct state new' });
+      } else {
+        p.ctstate = CT_STATE.established;
+        steps.push({ t: 'ct', text: 'conntrack: ответ на известное соединение → ct state established, ct direction reply' });
+      }
+      if (entry) { p.ctstatus = entry.status; p.ctdir = dir; p.ctmark = entry.mark || 0; }
+    }
+    const isNew = !p.ctOverride && !entry;
+    const nat = {};
+    const env = { steps, state, topo, nat, logs, hook: null, rejectWith: null };
+
+    const applyCtNat = (hook) => {
+      if (!entry || p.ctOverride) return;
+      const dstSide = hook === 'prerouting' || hook === 'output';
+      if (dir === 0) {
+        if (dstSide && entry.dnat) { p.dst = entry.dnat.to.dst; p.dport = entry.dnat.to.dport; steps.push({ t: 'nat', text: `conntrack применяет сохранённый DNAT → ${ep(p.dst, p.dport, p.proto)}` }); }
+        if (!dstSide && entry.snat) { p.src = entry.snat.to.src; p.sport = entry.snat.to.sport; steps.push({ t: 'nat', text: `conntrack применяет сохранённый SNAT → источник ${ep(p.src, p.sport, p.proto)}` }); }
+      } else {
+        if (dstSide && entry.snat) { p.dst = entry.snat.orig.src; p.dport = entry.snat.orig.sport; steps.push({ t: 'nat', text: `обратный SNAT: получатель снова ${ep(p.dst, p.dport, p.proto)}` }); }
+        if (!dstSide && entry.dnat) { p.src = entry.dnat.orig.dst; p.sport = entry.dnat.orig.dport; steps.push({ t: 'nat', text: `обратный DNAT: источник снова ${ep(p.src, p.sport, p.proto)}` }); }
+      }
+    };
+
+    const runRule = (rule) => {
+      for (const it of rule.items) {
+        switch (it.k) {
+          case 'match':
+            if (!testMatch(it, p)) return null;
+            break;
+          case 'counter': break;
+          case 'log':
+            logs.push(it.prefix);
+            steps.push({ t: 'log', text: `log: «${it.prefix}» (в журнал ядра)`, line: rule.line });
+            break;
+          case 'limit': {
+            const n = (state.limits.get(rule.id) || 0) + 1;
+            state.limits.set(rule.id, n);
+            const within = n <= it.burst;
+            if (it.over ? within : !within) return null;
+            break;
+          }
+          case 'setmark': p[it.field] = it.value; break;
+          case 'nat': {
+            const before = ep(p.src, p.sport, p.proto) + ' > ' + ep(p.dst, p.dport, p.proto);
+            if (it.type === 'dnat' || it.type === 'redirect') {
+              const addr = it.type === 'dnat' ? it.addr : (env.hook === 'output' ? ipToInt('127.0.0.1') : ifAddr(topo, p.iif));
+              nat.dnat = { orig: { dst: p.dst, dport: p.dport }, to: { dst: addr, dport: it.port ?? p.dport } };
+              p.dst = addr; if (it.port !== null) p.dport = it.port;
+              p.ctstatus |= CT_STATUS.dnat;
+            } else {
+              const addr = it.type === 'snat' ? it.addr : ifAddr(topo, p.oif);
+              nat.snat = { orig: { src: p.src, sport: p.sport }, to: { src: addr, sport: it.port ?? p.sport } };
+              p.src = addr; if (it.port !== null) p.sport = it.port;
+              p.ctstatus |= CT_STATUS.snat;
+            }
+            rule.hits++;
+            steps.push({ t: 'rule', rule, line: rule.line, text: rule.text, verdict: it.type });
+            steps.push({ t: 'nat', text: `${it.type}: ${before} ⟶ ${ep(p.src, p.sport, p.proto)} > ${ep(p.dst, p.dport, p.proto)}` });
+            return { v: 'accept', silent: true };
+          }
+          case 'reject':
+            if (it.needTcp && p.proto !== 6) return null;
+            env.rejectWith = it.with.text;
+            rule.hits++;
+            steps.push({ t: 'rule', rule, line: rule.line, text: rule.text, verdict: 'reject' });
+            return { v: 'reject', silent: true };
+          case 'verdict':
+            rule.hits++;
+            steps.push({ t: 'rule', rule, line: rule.line, text: rule.text, verdict: it.v === 'jump' || it.v === 'goto' ? `${it.v} ${it.target}` : it.v });
+            return { v: it.v, target: it.chain, silent: true };
+        }
+      }
+      rule.hits++;
+      steps.push({ t: 'rule', rule, line: rule.line, text: rule.text, verdict: null });
+      return { v: 'continue' };
+    };
+
+    const runChain = (ch, depth) => {
+      if (depth > 16) throw new Error('Слишком глубокая вложенность jump/goto — похоже на цикл между цепочками');
+      for (const rule of ch.rules) {
+        const r = runRule(rule);
+        if (!r || r.v === 'continue') continue;
+        if (r.v === 'jump') {
+          steps.push({ t: 'chain', ch: r.target, sub: true });
+          const rr = runChain(r.target, depth + 1);
+          if (rr.v === 'end' || rr.v === 'return') { steps.push({ t: 'back', text: `${rr.v === 'end' ? 'конец цепочки' : 'return'} ${r.target.name} → назад в ${ch.name}` }); continue; }
+          return rr;
+        }
+        if (r.v === 'goto') {
+          steps.push({ t: 'chain', ch: r.target, sub: true });
+          const rr = runChain(r.target, depth + 1);
+          if (rr.v === 'end' || rr.v === 'return') return { v: 'return' };
+          return rr;
+        }
+        return r;
+      }
+      return { v: 'end' };
+    };
+
+    const runHook = (hook) => {
+      env.hook = hook;
+      steps.push({ t: 'hook', hook });
+      const chains = chainsForHook(rs, hook, isNew);
+      const pseudoPrio = (hook === 'prerouting' || hook === 'output') ? -100 : 100;
+      let pseudoDone = !entry || !!p.ctOverride;
+      if (!chains.length) steps.push({ t: 'note', text: 'базовых цепочек на этом хуке нет — пакет проходит' });
+      for (const ch of chains) {
+        if (!pseudoDone && ch.prio > pseudoPrio) { applyCtNat(hook); pseudoDone = true; }
+        steps.push({ t: 'chain', ch });
+        const r = runChain(ch, 0);
+        let v;
+        if (r.v === 'end' || r.v === 'return') {
+          v = ch.policy;
+          steps.push({ t: 'policy', text: `${r.v === 'end' ? 'правила кончились' : 'return из базовой цепочки'} → policy ${ch.policy}`, verdict: ch.policy, line: ch.hookLine });
+        } else v = r.v;
+        if (v === 'drop' || v === 'reject') return v;
+      }
+      if (!pseudoDone) applyCtNat(hook);
+      return 'accept';
+    };
+
+    let verdict = 'accept', note = '';
+    const finish = () => {
+      if (verdict === 'accept') {
+        if (isNew) {
+          const fin = tupleOf(p);
+          const e = {
+            origKey: tupleKey(origTuple), replyKey: tupleKey(reverse(fin)), seenReply: false,
+            status: CT_STATUS.confirmed | (nat.dnat ? CT_STATUS.dnat : 0) | (nat.snat ? CT_STATUS.snat : 0),
+            dnat: nat.dnat, snat: nat.snat, orig: origTuple, reply: reverse(fin), mark: p.ctmark
+          };
+          state.conns.push(e);
+          steps.push({ t: 'ct', text: 'conntrack: соединение записано — ответные пакеты будут established' });
+        } else if (entry && dir === 1 && !entry.seenReply) {
+          entry.seenReply = true;
+          entry.status |= CT_STATUS['seen-reply'];
+        }
+      }
+      steps.push({ t: 'end', verdict, text: note });
+      return {
+        verdict, steps, logs, rejectWith: env.rejectWith,
+        final: { src: p.src, sport: p.sport, dst: p.dst, dport: p.dport, oif: p.oif, iif: p.iif, proto: p.proto }
+      };
+    };
+
+    if (p.iif) {
+      if (!topo.ifaces.find(i => i.name === p.iif)) throw new Error(`Интерфейса ${p.iif} нет на этом хосте`);
+      verdict = runHook('prerouting');
+      if (verdict !== 'accept') return finish();
+      const rt = route(topo, p.dst);
+      if (rt.local) {
+        steps.push({ t: 'route', text: `маршрутизация: ${intToIp(p.dst)} — адрес этого хоста → INPUT` });
+        verdict = runHook('input');
+        if (verdict === 'accept') note = 'доставлен локальному процессу';
+        return finish();
+      }
+      if (!topo.forward) {
+        steps.push({ t: 'route', text: `маршрутизация: ${intToIp(p.dst)} — чужой адрес, а net.ipv4.ip_forward = 0` });
+        verdict = 'drop'; note = 'транзит выключен, пакет отброшен ядром';
+        return finish();
+      }
+      if (!rt.oif) { verdict = 'drop'; note = 'нет маршрута'; return finish(); }
+      p.oif = rt.oif;
+      steps.push({ t: 'route', text: `маршрутизация: ${intToIp(p.dst)} — транзит, ${rt.how} → FORWARD` });
+      verdict = runHook('forward');
+      if (verdict !== 'accept') return finish();
+      verdict = runHook('postrouting');
+      if (verdict === 'accept') note = `отправлен в ${p.oif}`;
+      return finish();
+    }
+    let rt = route(topo, p.dst);
+    p.oif = rt.oif;
+    steps.push({ t: 'route', text: `пакет создан локальным процессом, ${rt.local ? 'получатель локальный (oif lo)' : rt.how} → OUTPUT` });
+    if (!rt.oif) { verdict = 'drop'; note = 'нет маршрута'; return finish(); }
+    const dstBefore = p.dst;
+    verdict = runHook('output');
+    if (verdict !== 'accept') return finish();
+    if (p.dst !== dstBefore) {
+      rt = route(topo, p.dst);
+      p.oif = rt.oif;
+      steps.push({ t: 'route', text: `адрес назначения изменился — перемаршрутизация, oif ${p.oif}` });
+    }
+    verdict = runHook('postrouting');
+    if (verdict === 'accept') note = `отправлен в ${p.oif}`;
+    return finish();
+  }
+
+  // ---------- test suites ----------
+  function runPacket(rs, topo, spec, state) {
+    const pk = parsePacket(spec.p, topo);
+    const runs = [];
+    for (let i = 0; i < pk.count; i++) runs.push(simulate(rs, topo, pk, state));
+    const agg = { accept: 0, drop: 0, reject: 0 };
+    runs.forEach(r => agg[r.verdict]++);
+    return { pk, runs, agg };
+  }
+
+  function checkExpect(spec, res) {
+    const { agg, runs, pk } = res;
+    const n = pk.count;
+    const e = spec.e;
+    let ok;
+    if (e === 'accept') ok = agg.accept === n;
+    else if (e === 'drop') ok = agg.drop === n;
+    else if (e === 'reject') ok = agg.reject === n;
+    else if (e === 'deny') ok = agg.accept === 0;
+    else if (e === 'mixed') ok = agg.accept > 0 && agg.accept < n;
+    const problems = [];
+    if (!ok) problems.push('verdict');
+    const firstAcc = runs.find(r => r.verdict === 'accept');
+    if (spec.nat && firstAcc) {
+      const f = firstAcc.final;
+      for (const [k, want] of Object.entries(spec.nat)) {
+        const got = (k === 'src' || k === 'dst') ? intToIp(f[k]) : f[k];
+        if (String(got) !== String(want)) problems.push(`${k}: ожидалось ${want}, получилось ${got}`);
+      }
+    }
+    if (spec.oif && firstAcc && firstAcc.final.oif !== spec.oif) problems.push(`oif: ожидался ${spec.oif}, получился ${firstAcc.final.oif}`);
+    if (spec.rejectWith) {
+      const rj = runs.find(r => r.verdict === 'reject');
+      if (rj && !String(rj.rejectWith).includes(spec.rejectWith)) problems.push(`reject: ожидался ответ «${spec.rejectWith}», отправлен «${rj.rejectWith}»`);
+    }
+    if (spec.log && !runs.some(r => r.logs.includes(spec.log))) problems.push(`в журнале нет записи с префиксом «${spec.log}»`);
+    return { ok: problems.length === 0, problems };
+  }
+
+  function gotLabel(agg, n) {
+    const parts = ['accept', 'reject', 'drop'].filter(k => agg[k]);
+    if (parts.length === 1) return n > 1 ? `${parts[0]} ×${n}` : parts[0];
+    return parts.map(k => `${agg[k]} ${k}`).join(' / ');
+  }
+
+  function runSuite(src, level) {
+    let rs;
+    try { rs = compile(src); } catch (err) { return { error: err }; }
+    const checks = (level.checks || []).map(c => ({ text: c.text, ok: !!safe(() => c.fn(rs, helpers)) }));
+    let total = 0, passed = 0;
+    const flows = level.flows.map(flow => {
+      const state = newState();
+      const packets = flow.packets.map(spec => {
+        total++;
+        try {
+          const res = runPacket(rs, level.topo, spec, state);
+          const chk = checkExpect(spec, res);
+          if (chk.ok) passed++;
+          return { spec, res, ...chk, got: gotLabel(res.agg, res.pk.count) };
+        } catch (err) {
+          return { spec, ok: false, problems: [err.message], got: 'ошибка', runtimeError: err.message };
+        }
+      });
+      return { name: flow.name, packets };
+    });
+    const hits = {};
+    for (const tb of rs.tables) for (const ch of tb.chains.values()) for (const r of ch.rules) if (r.hits) hits[r.line] = (hits[r.line] || 0) + r.hits;
+    const checksOk = checks.every(c => c.ok);
+    return { rs, flows, checks, total, passed, hits, solved: passed === total && checksOk };
+  }
+  function safe(fn) { try { return fn(); } catch (e) { return false; } }
+
+  // помощники для статических проверок уровней
+  const helpers = {
+    allChains: rs => rs.tables.flatMap(t => [...t.chains.values()]),
+    baseChain: (rs, hook, type = 'filter') => helpers.allChains(rs).find(c => c.base && c.hook === hook && c.type === type),
+    items: rs => helpers.allChains(rs).flatMap(c => c.rules.flatMap(r => r.items.map(it => ({ it, rule: r, chain: c })))),
+    set: (rs, name) => rs.tables.map(t => t.sets.get(name)).find(Boolean),
+    ip: ipToInt
+  };
+
+  return { compile, simulate, parsePacket, formatPacket, newState, runSuite, runPacket, checkExpect, gotLabel, intToIp, ipToInt, NftError, helpers, SERVICES, ICMP_TYPES, TCP_FLAGS };
+})();
+if (typeof module !== 'undefined') module.exports = NFT;
+
+</script>
+<script>
+// ===== уровни тренажёра =====
+const TOPO = {
+  server: {
+    name: 'web-01', forward: false,
+    ifaces: [
+      { name: 'lo', addr: '127.0.0.1', net: '127.0.0.0/8', role: 'loopback' },
+      { name: 'eth0', addr: '203.0.113.10', net: '203.0.113.0/24', gw: true, role: 'интернет' }
+    ]
+  },
+  server2: {
+    name: 'web-01', forward: false,
+    ifaces: [
+      { name: 'lo', addr: '127.0.0.1', net: '127.0.0.0/8', role: 'loopback' },
+      { name: 'eth0', addr: '203.0.113.10', net: '203.0.113.0/24', gw: true, role: 'интернет' },
+      { name: 'eth1', addr: '10.20.0.5', net: '10.20.0.0/24', role: 'офис' }
+    ]
+  },
+  router: {
+    name: 'gw-01', forward: true,
+    ifaces: [
+      { name: 'lo', addr: '127.0.0.1', net: '127.0.0.0/8', role: 'loopback' },
+      { name: 'eth0', addr: '203.0.113.10', net: '203.0.113.0/24', gw: true, role: 'WAN' },
+      { name: 'eth1', addr: '192.168.1.1', net: '192.168.1.0/24', role: 'LAN' }
+    ]
+  }
+};
+
+const L2_SOLUTION = `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    iifname "lo" accept
+    tcp dport 22 accept
+  }
+}
+`;
+const L3_SOLUTION = `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport 22 accept
+  }
+}
+`;
+const L4_SOLUTION = `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport { 80, 443 } accept
+    ip saddr { 10.10.0.0/24, 198.51.100.7 } tcp dport 22 accept
+  }
+}
+`;
+const L5_SOLUTION = `define ADMIN_NET = 10.10.0.0/24
+
+table inet filter {
+  set blocklist {
+    type ipv4_addr
+    flags interval
+    elements = { 192.0.2.0/24, 198.51.100.66 }
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ip saddr @blocklist drop
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport { 80, 443 } accept
+    ip saddr $ADMIN_NET tcp dport 22 accept
+  }
+}
+`;
+const L6_SOLUTION = L5_SOLUTION.replace('    ip saddr $ADMIN_NET tcp dport 22 accept\n',
+  '    ip saddr $ADMIN_NET tcp dport 22 accept\n    icmp type echo-request limit rate 5/second accept\n');
+const L7_SOLUTION = `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport 443 accept
+    iifname "eth1" tcp dport 22 accept
+
+    # офис: закрытые порты отвечают отказом
+    iifname "eth1" reject with tcp reset
+    iifname "eth1" reject
+  }
+}
+`;
+const L8_SOLUTION = `table inet filter {
+  chain ssh_check {
+    ip saddr 10.20.0.0/24 accept
+    ip saddr 198.51.100.7 accept
+    log prefix "ssh-deny: " drop
+  }
+
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport 443 accept
+    tcp dport 22 jump ssh_check
+
+    iifname "eth1" reject with tcp reset
+    iifname "eth1" reject
+  }
+}
+`;
+const ROUTER_INPUT = `  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    iifname "eth1" tcp dport 22 accept
+  }
+`;
+const L9_SOLUTION = `table inet filter {
+${ROUTER_INPUT}
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "eth1" oifname "eth0" accept
+  }
+}
+`;
+const L10_SOLUTION = L9_SOLUTION + `
+table ip nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+
+    ip saddr 192.168.1.0/24 oifname "eth0" masquerade
+  }
+}
+`;
+const L11_SOLUTION = `table inet filter {
+${ROUTER_INPUT}
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "eth1" oifname "eth0" accept
+    ct status dnat accept
+  }
+}
+
+table ip nat {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+
+    iifname "eth0" tcp dport 8080 dnat ip to 192.168.1.20:80
+  }
+
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+
+    ip saddr 192.168.1.0/24 oifname "eth0" masquerade
+  }
+}
+`;
+
+const LEVELS = [
+  {
+    id: 'first-rule', title: 'Первое правило', topo: TOPO.server,
+    theory: `
+<p>В nftables нет встроенных таблиц: вы сами создаёте <b>таблицу</b> (контейнер) и в ней <b>цепочки</b>. Цепочка с указанием <code>hook</code> — <i>базовая</i>: ядро само прогоняет через неё пакеты в этой точке пути.</p>
+<pre>table inet filter {            <span class="c"># семейство inet = IPv4 + IPv6</span>
+  chain input {
+    type filter hook input priority filter; policy accept;
+    tcp dport 25 drop          <span class="c"># выражение + вердикт</span>
+  }
+}</pre>
+<p>Правило — это цепочка выражений слева направо. Если все выражения совпали, срабатывает вердикт. Первый совпавший <code>accept</code> или <code>drop</code> завершает проверку пакета в этой цепочке.</p>
+<p><code>hook input</code> видит только пакеты, адресованные самому хосту. Исходящие проходят через <code>output</code>, транзитные — через <code>forward</code>.</p>`,
+    task: 'На сервере web-01 случайно включён telnet (tcp/23). Закройте входящий telnet, остальной трафик пока не трогайте.',
+    starter: `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy accept;
+
+    # ваше правило здесь
+  }
+}
+`,
+    solution: `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy accept;
+
+    tcp dport 23 drop
+  }
+}
+`,
+    hints: ['Нужно одно правило: выражение по порту назначения TCP и вердикт.', 'Порт назначения TCP — это `tcp dport`.', 'Готовое правило: `tcp dport 23 drop`'],
+    flows: [
+      { name: 'Telnet из интернета', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:23', e: 'drop', why: 'Порт 23 должен закрываться правилом с вердиктом drop.' }] },
+      { name: 'SSH продолжает работать', packets: [{ p: 'eth0 tcp 198.51.100.7:51001 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'Сайт продолжает работать', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:443', e: 'accept' }] },
+      { name: 'Исходящий telnet с сервера', packets: [{ p: '- tcp 203.0.113.10:40000 > 198.51.100.50:23', e: 'accept', why: 'Цепочка input не видит исходящие пакеты. Если этот тест упал, правило попало не в ту цепочку.' }] }
+    ]
+  },
+  {
+    id: 'default-deny', title: 'Запрещено всё, что не разрешено', topo: TOPO.server,
+    theory: `
+<p>Список «что запретить» никогда не бывает полным. Правильный подход наоборот: <code>policy drop</code> у базовой цепочки и явные разрешения для нужного.</p>
+<p><b>policy</b> — вердикт, который применяется, если пакет дошёл до конца базовой цепочки и ни одно правило не вынесло окончательного решения.</p>
+<pre>chain input {
+  type filter hook input priority filter; policy drop;
+  iifname "lo" accept      <span class="c"># локальные сервисы общаются через loopback</span>
+  tcp dport 22 accept
+}</pre>
+<p>Не забывайте про <code>lo</code>: без него перестанут работать приложения, которые ходят на <code>127.0.0.1</code> (база, кеш, метрики).</p>
+<p class="warn">На живом сервере <code>policy drop</code> без разрешённого SSH отрежет вам доступ. Здесь можно ошибаться.</p>`,
+    task: 'Переведите input на политику drop. Разрешите трафик loopback и SSH (22/tcp). Telnet, веб и всё остальное должны отбрасываться.',
+    starter: `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy accept;
+
+    tcp dport 23 drop
+  }
+}
+`,
+    solution: L2_SOLUTION,
+    hints: ['Политика меняется в строке type: `policy drop;`', 'Loopback-трафик приходит с интерфейса lo: `iifname "lo" accept`', 'Правило `tcp dport 23 drop` теперь лишнее — его покрывает политика.'],
+    checks: [{ text: 'У цепочки input политика drop', fn: (rs, h) => h.baseChain(rs, 'input').policy === 'drop' }],
+    flows: [
+      { name: 'Локальный сервис через lo', packets: [{ p: 'lo tcp 127.0.0.1:41000 > 127.0.0.1:5432', e: 'accept', why: 'Приложение ходит в PostgreSQL на 127.0.0.1 — разрешите iifname "lo".' }] },
+      { name: 'SSH', packets: [{ p: 'eth0 tcp 198.51.100.7:51001 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'Веб (не разрешён)', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:80', e: 'drop' }] },
+      { name: 'SNMP (не разрешён)', packets: [{ p: 'eth0 udp 192.0.2.44:40001 > 203.0.113.10:161', e: 'drop' }] },
+      { name: 'Telnet', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:23', e: 'drop' }] }
+    ]
+  },
+  {
+    id: 'conntrack', title: 'Память соединений', topo: TOPO.server,
+    theory: `
+<p>С <code>policy drop</code> сервер больше не получает <i>ответы</i> на собственные запросы: ответ DNS приходит на случайный высокий порт, и его ничто не разрешает.</p>
+<p>Решает это <b>conntrack</b>: ядро помнит каждое соединение и помечает пакеты состоянием:</p>
+<ul>
+<li><code>new</code> — первый пакет нового соединения;</li>
+<li><code>established</code> — пакет соединения, в котором уже были пакеты в обе стороны;</li>
+<li><code>related</code> — связанный трафик, например ICMP-ошибка о нашем соединении;</li>
+<li><code>invalid</code> — пакет, который не удалось отнести ни к одному соединению (мусор, обрывки, сканирование).</li>
+</ul>
+<pre>ct state established,related accept
+ct state invalid drop</pre>
+<p>Эти две строки ставят в начало цепочки: подавляющая часть пакетов принадлежит уже установленным соединениям, и правило <code>established</code> пропустит их первым же сравнением.</p>`,
+    task: 'Сервер должен получать ответы на свои исходящие запросы (DNS, HTTPS), отбрасывать пакеты в состоянии invalid раньше правила для SSH и пропускать связанные ICMP-ошибки.',
+    starter: L2_SOLUTION,
+    solution: L3_SOLUTION,
+    hints: ['Состояние соединения проверяется выражением `ct state`.', 'Несколько состояний перечисляются через запятую: `ct state established,related accept`', 'Порядок важен: `ct state invalid drop` должен стоять выше `tcp dport 22 accept`.'],
+    flows: [
+      { name: 'DNS: запрос и ответ', packets: [
+        { p: '- udp 203.0.113.10:53000 > 8.8.8.8:53', e: 'accept' },
+        { p: 'eth0 udp 8.8.8.8:53 > 203.0.113.10:53000', e: 'accept', why: 'Это ответ на наш запрос — conntrack помечает его established.' }] },
+      { name: 'Ответ без запроса', packets: [{ p: 'eth0 udp 8.8.8.8:53 > 203.0.113.10:53001', e: 'drop', why: 'Запроса с порта 53001 не было — это new, а не established.' }] },
+      { name: 'HTTPS к репозиторию пакетов', packets: [
+        { p: '- tcp 203.0.113.10:41000 > 151.101.2.132:443', e: 'accept' },
+        { p: 'eth0 tcp 151.101.2.132:443 > 203.0.113.10:41000 syn,ack', e: 'accept' }] },
+      { name: 'Мусорный пакет на порт 22', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:22 ack ct=invalid', e: 'drop', why: 'Пакет invalid нужно отбросить раньше, чем сработает правило для SSH.' }] },
+      { name: 'Новое SSH-подключение', packets: [{ p: 'eth0 tcp 198.51.100.7:51001 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'ICMP-ошибка о нашем соединении', packets: [{ p: 'eth0 icmp 198.51.100.1 > 203.0.113.10 destination-unreachable ct=related', e: 'accept' }] }
+    ]
+  },
+  {
+    id: 'anon-sets', title: 'Множества в фигурных скобках', topo: TOPO.server,
+    theory: `
+<p>Вместо пяти почти одинаковых правил пишут одно с <b>анонимным множеством</b>. Ядро ищет значение в множестве хешем или деревом интервалов, а не перебирает правила одно за другим.</p>
+<pre>tcp dport { 80, 443 } accept
+ip saddr { 10.10.0.0/24, 198.51.100.7 } tcp dport 22 accept</pre>
+<p>В множество можно класть отдельные значения, подсети (<code>10.0.0.0/8</code>) и диапазоны (<code>1000-2000</code>, <code>10.0.0.1-10.0.0.9</code>).</p>
+<p>Выражения в одном правиле объединяются через логическое И: второе правило выше означает «источник из списка <b>и</b> порт 22».</p>`,
+    task: 'web-01 становится веб-сервером. Порты 80 и 443 открыты всем, SSH — только из сети админов 10.10.0.0/24 и с адреса 198.51.100.7. Используйте множества.',
+    starter: L3_SOLUTION,
+    solution: L4_SOLUTION,
+    hints: ['Старое правило `tcp dport 22 accept` открывает SSH всем — его нужно заменить.', 'Веб: `tcp dport { 80, 443 } accept`', 'Для SSH сочетайте два выражения: `ip saddr { 10.10.0.0/24, 198.51.100.7 } tcp dport 22 accept`'],
+    checks: [{ text: 'Используется множество { … } хотя бы из двух элементов', fn: (rs, h) => h.items(rs).some(x => x.it.k === 'match' && x.it.rhs.kind === 'set' && x.it.rhs.elems.length >= 2) }],
+    flows: [
+      { name: 'HTTP от посетителя', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:80', e: 'accept' }] },
+      { name: 'HTTPS от посетителя', packets: [{ p: 'eth0 tcp 192.0.2.44:40001 > 203.0.113.10:443', e: 'accept' }] },
+      { name: 'SSH из дома админа', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'SSH из сети админов', packets: [{ p: 'eth0 tcp 10.10.0.15:51000 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'SSH от посетителя', packets: [{ p: 'eth0 tcp 192.0.2.44:40002 > 203.0.113.10:22', e: 'drop', why: 'SSH разрешён только админам.' }] },
+      { name: 'Порт 8080 даже для админа', packets: [{ p: 'eth0 tcp 10.10.0.15:51001 > 203.0.113.10:8080', e: 'drop' }] }
+    ]
+  },
+  {
+    id: 'named-sets', title: 'Именованные множества и define', topo: TOPO.server,
+    theory: `
+<p><b>Именованное множество</b> живёт в таблице отдельно от правил. Его можно пополнять на лету, не перезагружая правила: <code>nft add element inet filter blocklist { 192.0.2.7 }</code>. Так работают fail2ban и CrowdSec.</p>
+<pre>set blocklist {
+  type ipv4_addr
+  flags interval            <span class="c"># нужно для подсетей и диапазонов</span>
+  elements = { 192.0.2.0/24 }
+}
+…
+ip saddr @blocklist drop</pre>
+<p><b>define</b> — макрос, который подставляется при разборе файла. Удобно для адресов, которые повторяются в нескольких местах:</p>
+<pre>define ADMIN_NET = 10.10.0.0/24
+ip saddr $ADMIN_NET tcp dport 22 accept</pre>
+<p>Без <code>flags interval</code> nft откажется класть подсеть в множество. Попробуйте и посмотрите на ошибку.</p>`,
+    task: 'Заведите множество blocklist с подсетью 192.0.2.0/24 и адресом 198.51.100.66 и отбрасывайте трафик с этих адресов раньше всего остального. Сеть админов вынесите в define ADMIN_NET и откройте SSH только ей.',
+    starter: L4_SOLUTION,
+    solution: L5_SOLUTION,
+    hints: ['Множество объявляется внутри таблицы, рядом с цепочками: `set blocklist { type ipv4_addr; flags interval; elements = { … } }`', 'Правило `ip saddr @blocklist drop` ставьте первым в цепочке.', '`define ADMIN_NET = 10.10.0.0/24` пишется вне таблицы, в начале файла; в правиле — `$ADMIN_NET`.'],
+    checks: [
+      { text: 'Есть множество blocklist типа ipv4_addr с flags interval', fn: (rs, h) => { const s = h.set(rs, 'blocklist'); return s && s.dt === 'ipv4' && s.flags.includes('interval'); } },
+      { text: 'В blocklist лежат 192.0.2.0/24 и 198.51.100.66', fn: (rs, h) => { const s = h.set(rs, 'blocklist'); const a = h.ip('192.0.2.0'), b = h.ip('192.0.2.255'), c = h.ip('198.51.100.66'); return s.elems.some(e => e.lo <= a && e.hi >= b) && s.elems.some(e => e.lo <= c && e.hi >= c); } },
+      { text: 'Правило ссылается на @blocklist', fn: (rs, h) => h.items(rs).some(x => x.it.k === 'match' && x.it.rhs.kind === 'ref' && x.it.rhs.name === 'blocklist') },
+      { text: 'Сеть админов задана через define и используется', fn: rs => Object.values(rs.defines).some(t => t.map(x => x.v).join('') === '10.10.0.0/24') && /\$\w+/.test(rs.__src || '') }
+    ],
+    flows: [
+      { name: 'HTTPS из заблокированной подсети', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:443', e: 'drop', why: 'Блок-лист должен срабатывать раньше, чем правило для веба.' }] },
+      { name: 'HTTPS с заблокированного адреса', packets: [{ p: 'eth0 tcp 198.51.100.66:40000 > 203.0.113.10:443', e: 'drop' }] },
+      { name: 'HTTPS от обычного посетителя', packets: [{ p: 'eth0 tcp 198.51.100.20:40000 > 203.0.113.10:443', e: 'accept' }] },
+      { name: 'SSH из сети админов', packets: [{ p: 'eth0 tcp 10.10.0.9:51000 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'SSH с домашнего адреса (больше не разрешён)', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:22', e: 'drop', why: 'Теперь SSH открыт только сети $ADMIN_NET.' }] }
+    ]
+  },
+  {
+    id: 'icmp-limit', title: 'ICMP и ограничение частоты', topo: TOPO.server,
+    theory: `
+<p>Полностью закрывать ICMP — плохая идея: ломаются ping, traceroute и определение MTU пути. Обычно разрешают <code>echo-request</code>, но ограничивают частоту, чтобы флуд не грузил сервер и канал.</p>
+<pre>icmp type echo-request limit rate 5/second accept</pre>
+<p><code>limit</code> — тоже выражение: оно «совпадает», пока пакеты укладываются в лимит. Лишние пакеты проходят мимо правила дальше и упираются в <code>policy drop</code>.</p>
+<p>У лимита есть запас <code>burst</code> (по умолчанию 5 пакетов). <span class="muted">В тренажёре пакеты пачки приходят одновременно: лимит пропускает первые <i>burst</i> штук, остальные — нет.</span></p>
+<p>Ответы на наши собственные ping (<code>echo-reply</code>) уже пропускает правило <code>established</code>.</p>`,
+    task: 'Разрешите входящий ping (echo-request) не чаще 5 пакетов в секунду. Флуд должен срезаться, остальные типы ICMP — отбрасываться политикой.',
+    starter: L5_SOLUTION,
+    solution: L6_SOLUTION,
+    hints: ['Тип ICMP проверяется выражением `icmp type`.', 'Лимит ставится между выражением и вердиктом: `… limit rate 5/second accept`', 'Отдельное правило для echo-reply не нужно — его покрывает established.'],
+    checks: [{ text: 'В правилах есть limit', fn: (rs, h) => h.items(rs).some(x => x.it.k === 'limit') }],
+    flows: [
+      { name: 'Одиночный ping', packets: [{ p: 'eth0 icmp 198.51.100.20 > 203.0.113.10 echo-request', e: 'accept' }] },
+      { name: 'Ping-флуд: 20 пакетов разом', packets: [{ p: 'eth0 icmp 198.51.100.20 > 203.0.113.10 echo-request x20', e: 'mixed', why: 'Часть пакетов должна пройти, а часть — отсечься лимитом.' }] },
+      { name: 'ICMP timestamp-request', packets: [{ p: 'eth0 icmp 198.51.100.20 > 203.0.113.10 timestamp-request', e: 'drop' }] },
+      { name: 'Ping с сервера наружу', packets: [
+        { p: '- icmp 203.0.113.10 > 1.1.1.1 echo-request', e: 'accept' },
+        { p: 'eth0 icmp 1.1.1.1 > 203.0.113.10 echo-reply', e: 'accept' }] }
+    ]
+  },
+  {
+    id: 'reject', title: 'drop или reject', topo: TOPO.server2,
+    theory: `
+<p><code>drop</code> молча выбрасывает пакет. Клиент ждёт до таймаута, а сканер не понимает, есть ли тут хост.</p>
+<p><code>reject</code> сразу отвечает отказом. Для своих (офис, мониторинг) это удобнее: приложение мгновенно получает «connection refused», а не висит 30 секунд.</p>
+<pre>reject                          <span class="c"># ICMP port-unreachable</span>
+reject with tcp reset           <span class="c"># TCP RST — так отвечает закрытый порт</span>
+reject with icmpx type admin-prohibited</pre>
+<p><code>reject with tcp reset</code> сам добавляет к правилу условие «это TCP», поэтому UDP-пакеты пройдут мимо него к следующему правилу.</p>
+<p>У web-01 появился второй интерфейс: <code>eth1</code> смотрит в офисную сеть 10.20.0.0/24. Различать трафик по интерфейсу помогает <code>iifname</code>.</p>`,
+    task: 'Из офиса (eth1) закрытые порты должны сразу отвечать отказом: TCP — RST-пакетом, остальное — ICMP. Из интернета по-прежнему тишина (drop). SSH разрешён только из офиса, HTTPS — всем.',
+    starter: `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    tcp dport 443 accept
+    # SSH — только из офиса (eth1)
+
+    # офис: закрытые порты отвечают отказом
+
+  }
+}
+`,
+    solution: L7_SOLUTION,
+    hints: ['Трафик из офиса: `iifname "eth1"`.', 'Правила reject ставятся в самом конце — после всех разрешений.', 'Нужно два правила: `iifname "eth1" reject with tcp reset` и `iifname "eth1" reject`'],
+    flows: [
+      { name: 'Офис → MySQL (порт закрыт)', packets: [{ p: 'eth1 tcp 10.20.0.31:50000 > 10.20.0.5:3306', e: 'reject', rejectWith: 'tcp reset', why: 'TCP из офиса — reject with tcp reset.' }] },
+      { name: 'Офис → SNMP (порт закрыт)', packets: [{ p: 'eth1 udp 10.20.0.31:50001 > 10.20.0.5:161', e: 'reject', rejectWith: 'icmp' }] },
+      { name: 'Интернет → MySQL', packets: [{ p: 'eth0 tcp 198.51.100.7:50000 > 203.0.113.10:3306', e: 'drop', why: 'Из интернета молча отбрасываем.' }] },
+      { name: 'Офис → SSH', packets: [{ p: 'eth1 tcp 10.20.0.31:50002 > 10.20.0.5:22', e: 'accept' }] },
+      { name: 'Интернет → SSH', packets: [{ p: 'eth0 tcp 198.51.100.7:50001 > 203.0.113.10:22', e: 'drop' }] },
+      { name: 'Офис → HTTPS', packets: [{ p: 'eth1 tcp 10.20.0.31:50003 > 10.20.0.5:443', e: 'accept' }] },
+      { name: 'Интернет → HTTPS', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:443', e: 'accept' }] }
+    ]
+  },
+  {
+    id: 'jump', title: 'Свои цепочки: jump и goto', topo: TOPO.server2,
+    theory: `
+<p>Обычная цепочка (без строки <code>type … hook …</code>) сама пакетов не получает: в неё переходят из других цепочек.</p>
+<ul>
+<li><code>jump имя</code> — перейти и, если там не будет решения, <b>вернуться</b> к следующему правилу;</li>
+<li><code>goto имя</code> — перейти без возврата: если решения не будет, сработает политика базовой цепочки;</li>
+<li><code>return</code> — досрочно вернуться из цепочки.</li>
+</ul>
+<pre>chain ssh_check {
+  ip saddr 10.20.0.0/24 accept
+  log prefix "ssh-deny: " drop
+}
+chain input {
+  …
+  tcp dport 22 jump ssh_check
+}</pre>
+<p><code>log</code> пишет пакет в журнал ядра (<code>journalctl -k</code>) и не прерывает правило, поэтому после него можно поставить вердикт.</p>`,
+    task: 'Вынесите проверку SSH в обычную цепочку ssh_check. SSH разрешён из офиса 10.20.0.0/24 и с адреса 198.51.100.7, остальные попытки нужно записывать в журнал с префиксом «ssh-deny: » и отбрасывать.',
+    starter: L7_SOLUTION,
+    solution: L8_SOLUTION,
+    hints: ['Обычная цепочка объявляется как базовая, только без строки type/hook/policy: `chain ssh_check { … }`', 'В input замените правило для SSH на `tcp dport 22 jump ssh_check`', 'Последнее правило ssh_check: `log prefix "ssh-deny: " drop`'],
+    checks: [
+      { text: 'Есть обычная цепочка ssh_check', fn: (rs, h) => h.allChains(rs).some(c => c.name === 'ssh_check' && !c.base) },
+      { text: 'Из input в неё переходят через jump или goto', fn: (rs, h) => h.items(rs).some(x => x.chain.base && x.chain.hook === 'input' && x.it.k === 'verdict' && x.it.target === 'ssh_check') }
+    ],
+    flows: [
+      { name: 'SSH из офиса', packets: [{ p: 'eth1 tcp 10.20.0.31:50000 > 10.20.0.5:22', e: 'accept' }] },
+      { name: 'SSH админа из дома', packets: [{ p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:22', e: 'accept' }] },
+      { name: 'SSH от чужого', packets: [{ p: 'eth0 tcp 192.0.2.44:40000 > 203.0.113.10:22', e: 'drop', log: 'ssh-deny: ', why: 'Чужая попытка должна попасть в журнал с префиксом «ssh-deny: » и отброситься.' }] },
+      { name: 'HTTPS не задет', packets: [{ p: 'eth0 tcp 192.0.2.44:40001 > 203.0.113.10:443', e: 'accept' }] },
+      { name: 'Офис → MySQL по-прежнему reject', packets: [{ p: 'eth1 tcp 10.20.0.31:50001 > 10.20.0.5:3306', e: 'reject' }] }
+    ]
+  },
+  {
+    id: 'forward', title: 'Маршрутизатор: forward', topo: TOPO.router,
+    theory: `
+<p>Теперь мы на шлюзе gw-01: <code>eth0</code> смотрит в интернет, <code>eth1</code> — в домашнюю сеть 192.168.1.0/24, в ядре включён <code>net.ipv4.ip_forward = 1</code>.</p>
+<p>Транзитные пакеты не попадают ни в <code>input</code>, ни в <code>output</code>: их путь — <code>prerouting → forward → postrouting</code>. Защита роутера и защита сети за ним — две разные цепочки.</p>
+<pre>chain forward {
+  type filter hook forward priority filter; policy drop;
+  ct state established,related accept
+  iifname "eth1" oifname "eth0" accept   <span class="c"># из LAN в интернет</span>
+}</pre>
+<p><code>oifname</code> известен в forward и postrouting: маршрутизация уже выбрала, куда уйдёт пакет.</p>
+<p class="muted">Пока считаем, что адреса LAN маршрутизируемы. В реальности ответ на 192.168.1.50 из интернета не придёт — это исправит NAT на следующем уровне.</p>`,
+    task: 'Закройте транзит по умолчанию (policy drop). Устройства LAN могут открывать соединения в интернет, ответы должны возвращаться, а новые соединения из интернета в LAN — отбрасываться. Цепочку input не трогайте.',
+    starter: `table inet filter {
+${ROUTER_INPUT}
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+  }
+}
+`,
+    solution: L9_SOLUTION,
+    hints: ['Начните forward так же, как input: `ct state established,related accept` и `ct state invalid drop`.', 'Направление «из LAN в интернет» задаётся парой `iifname "eth1" oifname "eth0"`.', 'И не забудьте `policy drop;`'],
+    checks: [{ text: 'У цепочки forward политика drop', fn: (rs, h) => h.baseChain(rs, 'forward').policy === 'drop' }],
+    flows: [
+      { name: 'Ноутбук из LAN открывает сайт', packets: [
+        { p: 'eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443', e: 'accept', oif: 'eth0' },
+        { p: 'eth0 tcp 93.184.216.34:443 > 192.168.1.50:51000 syn,ack', e: 'accept', oif: 'eth1' }] },
+      { name: 'Интернет → LAN, новое TCP', packets: [{ p: 'eth0 tcp 198.51.100.7:40000 > 192.168.1.50:22', e: 'drop' }] },
+      { name: 'Интернет → LAN, UDP', packets: [{ p: 'eth0 udp 198.51.100.7:40000 > 192.168.1.50:5060', e: 'drop' }] },
+      { name: 'SSH на роутер из LAN', packets: [{ p: 'eth1 tcp 192.168.1.50:50000 > 192.168.1.1:22', e: 'accept' }] },
+      { name: 'SSH на роутер из интернета', packets: [{ p: 'eth0 tcp 198.51.100.7:40001 > 203.0.113.10:22', e: 'drop' }] }
+    ]
+  },
+  {
+    id: 'masquerade', title: 'NAT: маскарадинг', topo: TOPO.router,
+    theory: `
+<p>Адреса 192.168.0.0/16 в интернете не маршрутизируются. Шлюз подменяет адрес источника на свой внешний (<b>SNAT</b>), а conntrack запоминает подмену и возвращает адрес обратно в ответах.</p>
+<p><code>masquerade</code> — это SNAT на адрес выходного интерфейса. Он удобен, если внешний адрес выдаётся по DHCP.</p>
+<pre>table ip nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr 192.168.1.0/24 oifname "eth0" masquerade
+  }
+}</pre>
+<p>Цепочки <code>type nat</code> видят только <b>первый</b> пакет соединения. Остальные пакеты conntrack транслирует сам, по записи. Поэтому в nat-цепочках не фильтруют.</p>`,
+    task: 'Добавьте NAT: всё, что из LAN уходит в интернет через eth0, должно выходить с адреса 203.0.113.10. Ответы должны возвращаться устройствам LAN.',
+    starter: L9_SOLUTION,
+    solution: L10_SOLUTION,
+    hints: ['Создайте отдельную таблицу: `table ip nat { … }`', 'Цепочка: `type nat hook postrouting priority srcnat;`', 'Правило: `ip saddr 192.168.1.0/24 oifname "eth0" masquerade`'],
+    checks: [{ text: 'Есть masquerade или snat', fn: (rs, h) => h.items(rs).some(x => x.it.k === 'nat' && (x.it.type === 'masquerade' || x.it.type === 'snat')) }],
+    flows: [
+      { name: 'LAN → сайт через NAT', packets: [
+        { p: 'eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443', e: 'accept', oif: 'eth0', nat: { src: '203.0.113.10' }, why: 'В интернет пакет должен уйти с адреса 203.0.113.10.' },
+        { p: 'eth0 tcp 93.184.216.34:443 > 203.0.113.10:51000 syn,ack', e: 'accept', oif: 'eth1', nat: { dst: '192.168.1.50', dport: 51000 }, why: 'Ответ приходит на внешний адрес; conntrack должен вернуть его ноутбуку.' }] },
+      { name: 'DNS из LAN', packets: [
+        { p: 'eth1 udp 192.168.1.77:53111 > 8.8.8.8:53', e: 'accept', nat: { src: '203.0.113.10' } },
+        { p: 'eth0 udp 8.8.8.8:53 > 203.0.113.10:53111', e: 'accept', nat: { dst: '192.168.1.77' } }] },
+      { name: 'Чужой пакет на внешний адрес', packets: [{ p: 'eth0 tcp 198.51.100.7:40000 > 203.0.113.10:51000', e: 'drop' }] }
+    ]
+  },
+  {
+    id: 'dnat', title: 'Проброс порта (DNAT)', topo: TOPO.router,
+    theory: `
+<p>В LAN стоит веб-сервер 192.168.1.20:80. Чтобы он был доступен снаружи как 203.0.113.10:8080, адрес назначения подменяют до маршрутизации (<b>DNAT</b>) в <code>prerouting</code>:</p>
+<pre>chain prerouting {
+  type nat hook prerouting priority dstnat; policy accept;
+  iifname "eth0" tcp dport 8080 dnat ip to 192.168.1.20:80
+}</pre>
+<p>После DNAT пакет адресован чужому хосту, поэтому дальше он идёт через <b>forward</b>, и там его тоже нужно разрешить. Удобнее всего так: <code>ct status dnat accept</code> — «соединение, к которому применён DNAT».</p>
+<p>Порт в <code>dnat to …:80</code> можно указать, только если правило уже сопоставило протокол (<code>tcp dport</code>). Иначе nft выдаст ошибку <i>transport protocol mapping is only valid after transport protocol match</i>.</p>`,
+    task: 'Пробросьте 203.0.113.10:8080 на веб-сервер 192.168.1.20:80 и разрешите этот трафик в forward. Прямые подключения из интернета к 192.168.1.20 и любые другие порты должны отбрасываться. Выход LAN в интернет должен работать по-прежнему.',
+    starter: L10_SOLUTION,
+    solution: L11_SOLUTION,
+    hints: ['Добавьте в table ip nat цепочку prerouting: `type nat hook prerouting priority dstnat;`', 'Правило: `iifname "eth0" tcp dport 8080 dnat ip to 192.168.1.20:80`', 'В forward: `ct status dnat accept`'],
+    checks: [{ text: 'Есть dnat', fn: (rs, h) => h.items(rs).some(x => x.it.k === 'nat' && x.it.type === 'dnat') }],
+    flows: [
+      { name: 'Посетитель → 203.0.113.10:8080', packets: [
+        { p: 'eth0 tcp 198.51.100.7:40000 > 203.0.113.10:8080', e: 'accept', oif: 'eth1', nat: { dst: '192.168.1.20', dport: 80 }, why: 'Пакет должен быть переадресован на 192.168.1.20:80 и пропущен в forward.' },
+        { p: 'eth1 tcp 192.168.1.20:80 > 198.51.100.7:40000 syn,ack', e: 'accept', oif: 'eth0', nat: { src: '203.0.113.10', sport: 8080 }, why: 'Ответ сервера уходит наружу от имени 203.0.113.10:8080.' }] },
+      { name: 'Прямо на 192.168.1.20 снаружи', packets: [{ p: 'eth0 tcp 198.51.100.7:40001 > 192.168.1.20:80', e: 'drop', why: 'Без DNAT такой пакет не должен проходить forward.' }] },
+      { name: 'Соседний порт 8081', packets: [{ p: 'eth0 tcp 198.51.100.7:40002 > 203.0.113.10:8081', e: 'drop' }] },
+      { name: 'LAN по-прежнему выходит в интернет', packets: [{ p: 'eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443', e: 'accept', nat: { src: '203.0.113.10' } }] }
+    ]
+  },
+  {
+    id: 'audit', title: 'Аудит чужого конфига', topo: TOPO.server2,
+    theory: `
+<p>Конфиг достался от предыдущего админа с пометкой «всё работает, ничего не трогай». В нём четыре ошибки. Требования к серверу:</p>
+<ol>
+<li>публично открыты только 22, 80 и 443/tcp;</li>
+<li>MySQL (3306) доступен только из офиса 10.20.0.0/24;</li>
+<li>сервер сам ходит наружу (DNS, обновления) и отвечает своим клиентам;</li>
+<li>пакеты invalid отбрасываются раньше всех разрешений.</li>
+</ol>
+<p>Прогоните тесты и откройте трассировку упавших пакетов: в ней видно, какое правило сработало.</p>`,
+    task: 'Найдите и исправьте четыре ошибки так, чтобы конфиг выполнял все требования.',
+    starter: `# Конфиг от предыдущего админа. «Всё работает, ничего не трогай».
+table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    tcp dport { 22, 80, 443 } accept
+    ct state established,related accept
+    ip saddr 0.0.0.0/0 tcp dport 3306 accept
+    iifname "lo" accept
+    ct state invalid drop
+    udp dport 0-65535 accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy drop;
+    tcp dport { 80, 443 } accept
+  }
+}
+`,
+    solution: `table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lo" accept
+    tcp dport { 22, 80, 443 } accept
+    ip saddr 10.20.0.0/24 tcp dport 3306 accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}
+`,
+    hints: ['`0.0.0.0/0` — это «любой адрес».', 'Ответ сервера клиенту уходит с порта 443 на высокий порт клиента, и `tcp dport { 80, 443 }` в output его не пропустит.', '`udp dport 0-65535` открывает весь UDP — например, memcached на 11211.'],
+    flows: [
+      { name: 'HTTPS: запрос и ответ сервера', packets: [
+        { p: 'eth0 tcp 198.51.100.7:51000 > 203.0.113.10:443', e: 'accept' },
+        { p: '- tcp 203.0.113.10:443 > 198.51.100.7:51000 syn,ack', e: 'accept', why: 'Ответ сервера клиенту проходит через output.' }] },
+      { name: 'MySQL из интернета', packets: [{ p: 'eth0 tcp 198.51.100.7:51001 > 203.0.113.10:3306', e: 'drop' }] },
+      { name: 'MySQL из офиса', packets: [{ p: 'eth1 tcp 10.20.0.31:50000 > 10.20.0.5:3306', e: 'accept' }] },
+      { name: 'Memcached из интернета', packets: [{ p: 'eth0 udp 198.51.100.7:40000 > 203.0.113.10:11211', e: 'drop', why: 'Открытый UDP 11211 используют для DDoS-усиления.' }] },
+      { name: 'DNS-запрос сервера', packets: [
+        { p: '- udp 203.0.113.10:53000 > 8.8.8.8:53', e: 'accept' },
+        { p: 'eth0 udp 8.8.8.8:53 > 203.0.113.10:53000', e: 'accept' }] },
+      { name: 'Обновления по HTTPS', packets: [
+        { p: '- tcp 203.0.113.10:41000 > 151.101.2.132:443', e: 'accept' },
+        { p: 'eth0 tcp 151.101.2.132:443 > 203.0.113.10:41000 syn,ack', e: 'accept' }] },
+      { name: 'Пакет invalid на 443', packets: [{ p: 'eth0 tcp 198.51.100.7:51002 > 203.0.113.10:443 ack ct=invalid', e: 'drop' }] },
+      { name: 'SSH', packets: [{ p: 'eth0 tcp 198.51.100.7:51003 > 203.0.113.10:22', e: 'accept' }] }
+    ]
+  }
+];
+
+const SANDBOX = {
+  topo: TOPO.router,
+  ruleset: L11_SOLUTION,
+  presets: [
+    { label: 'LAN → сайт', p: 'eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443' },
+    { label: 'ответ сайта', p: 'eth0 tcp 93.184.216.34:443 > 203.0.113.10:51000 syn,ack' },
+    { label: 'проброс :8080', p: 'eth0 tcp 198.51.100.7:40000 > 203.0.113.10:8080' },
+    { label: 'ответ веб-сервера', p: 'eth1 tcp 192.168.1.20:80 > 198.51.100.7:40000 syn,ack' },
+    { label: 'скан из интернета', p: 'eth0 tcp 198.51.100.7:40001 > 192.168.1.50:22' },
+    { label: 'SSH на роутер', p: 'eth1 tcp 192.168.1.50:50000 > 192.168.1.1:22' },
+    { label: 'DNS роутера', p: '- udp 203.0.113.10:53000 > 8.8.8.8:53' },
+    { label: 'ping-флуд', p: 'eth0 icmp 198.51.100.7 > 203.0.113.10 echo-request x20' }
+  ]
+};
+if (typeof module !== 'undefined') module.exports = { LEVELS, SANDBOX, TOPO };
+
+</script>
+<script>
+// ===== интерфейс тренажёра =====
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const LH = 21, PAD = 12;
+  const KEY = 'nft-trainer-v1';
+
+  // ---------- состояние ----------
+  const S = Object.assign({ solved: {}, code: {}, current: LEVELS[0].id, sandbox: null, view: 'missions' }, load());
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+  let saveTimer = null;
+  function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* хранилище недоступно */ } }, 250); }
+
+  // ---------- подсветка ----------
+  const KW = new Set('table chain set map define type hook priority policy flags elements typeof flush ruleset add insert rule element include device'.split(' '));
+  const KW2 = new Set('inet ip ip6 arp bridge netdev filter nat route input output forward prerouting postrouting ingress egress raw mangle dstnat srcnat security interval timeout ipv4_addr ipv6_addr inet_service inet_proto ifname'.split(' '));
+  const SELW = new Set('saddr daddr sport dport protocol l4proto nexthdr iifname oifname iif oif state status direction mark meta ct tcp udp th icmp icmpv6 code pkttype nfproto'.split(' '));
+  const STMT = new Set('counter log limit rate over burst packets bytes masquerade snat dnat redirect to with prefix level comment reset'.split(' '));
+  const VERD = { accept: 'sx-ok', drop: 'sx-bad', reject: 'sx-warn', jump: 'sx-jmp', goto: 'sx-jmp', return: 'sx-jmp', continue: 'sx-jmp' };
+  const HL_RE = /(#.*$)|("[^"]*"?)|(\$[A-Za-z_]\w*)|(@[A-Za-z_][\w-]*)|([A-Za-z_][\w-]*)|(\d[\w.\/:\-]*)/g;
+  function hl(line) {
+    let out = '', last = 0, m;
+    HL_RE.lastIndex = 0;
+    while ((m = HL_RE.exec(line))) {
+      out += esc(line.slice(last, m.index));
+      const t = m[0];
+      let cls = '';
+      if (m[1]) cls = 'sx-com';
+      else if (m[2]) cls = 'sx-str';
+      else if (m[3] || m[4]) cls = 'sx-var';
+      else if (m[5]) cls = VERD[t] || (KW.has(t) ? 'sx-kw' : KW2.has(t) ? 'sx-kw2' : SELW.has(t) ? 'sx-sel' : STMT.has(t) ? 'sx-stmt' : '');
+      else if (m[6]) cls = 'sx-num';
+      out += cls ? `<span class="${cls}">${esc(t)}</span>` : esc(t);
+      last = m.index + t.length;
+      if (!t.length) HL_RE.lastIndex++;
+    }
+    return out + esc(line.slice(last));
+  }
+
+  // ---------- редактор ----------
+  function makeEditor(root, opts) {
+    root.innerHTML = `<div class="ed"><div class="ed-gutter" aria-hidden="true"></div><div class="ed-body"><pre class="ed-hl" aria-hidden="true"><div class="ed-lines"></div></pre><textarea class="ed-ta" id="${opts.id}" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Набор правил nftables"></textarea></div></div>`;
+    const ed = $('.ed', root), gut = $('.ed-gutter', root), pre = $('.ed-hl', root), lines = $('.ed-lines', root), ta = $('.ed-ta', root);
+    let errLine = null, flashLine = null, hits = {};
+    const render = () => {
+      const ls = ta.value.split('\n');
+      lines.innerHTML = ls.map((l, i) => {
+        const n = i + 1, c = n === errLine ? 'err' : n === flashLine ? 'flash' : '';
+        return `<div${c ? ` class="${c}"` : ''}>${hl(l) || ' '}</div>`;
+      }).join('');
+      gut.innerHTML = ls.map((_, i) => {
+        const n = i + 1;
+        return `<div${n === errLine ? ' class="err"' : ''}>${hits[n] ? `<span class="h" title="правило сработало ${hits[n]} раз">${hits[n]}</span>` : ''}<span class="n">${n}</span></div>`;
+      }).join('');
+      const h = Math.min(opts.max || 560, Math.max(opts.min || 240, ls.length * LH + PAD * 2 + 14));
+      ed.style.height = h + 'px';
+      sync();
+    };
+    const sync = () => { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft; gut.scrollTop = ta.scrollTop; };
+    const insert = (txt) => {
+      ta.focus();
+      if (!document.execCommand || !document.execCommand('insertText', false, txt)) {
+        ta.setRangeText(txt, ta.selectionStart, ta.selectionEnd, 'end');
+        ta.dispatchEvent(new Event('input'));
+      }
+    };
+    ta.addEventListener('input', () => { errLine = null; flashLine = null; render(); opts.onChange && opts.onChange(ta.value); });
+    ta.addEventListener('scroll', sync);
+    ta.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); opts.onRun && opts.onRun(); return; }
+      if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); insert('  '); return; }
+      if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const before = ta.value.slice(0, ta.selectionStart);
+        const cur = before.slice(before.lastIndexOf('\n') + 1);
+        let ind = /^\s*/.exec(cur)[0];
+        if (/\{\s*$/.test(cur)) ind += '  ';
+        e.preventDefault();
+        insert('\n' + ind);
+      }
+      if (e.key === '}' ) {
+        const before = ta.value.slice(0, ta.selectionStart);
+        const cur = before.slice(before.lastIndexOf('\n') + 1);
+        if (/^\s{2,}$/.test(cur) && ta.selectionStart === ta.selectionEnd) {
+          e.preventDefault();
+          ta.setSelectionRange(ta.selectionStart - 2, ta.selectionStart);
+          insert('}');
+        }
+      }
+    });
+    return {
+      get: () => ta.value,
+      set: (v) => { ta.value = v; errLine = null; flashLine = null; hits = {}; ta.scrollTop = 0; render(); },
+      setError: (line) => { errLine = line; render(); },
+      setHits: (h) => { hits = h || {}; render(); },
+      flash: (line) => {
+        flashLine = line; render();
+        const target = (line - 1) * LH - ta.clientHeight / 3;
+        ta.scrollTop = Math.max(0, target); sync();
+        root.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        setTimeout(() => { if (flashLine === line) { flashLine = null; render(); } }, 1700);
+      },
+      render
+    };
+  }
+
+  // ---------- ошибки ----------
+  function showError(box, editor, err) {
+    if (!err) { box.hidden = true; editor.setError(null); return; }
+    const t = err.tok;
+    const src = editor.get().split('\n');
+    let html = '';
+    if (t && t.line) {
+      const len = Math.max(1, t.len || 1);
+      html += `<span class="loc">/etc/nftables.conf:${t.line}:${t.col}-${t.col + len - 1}: Error:</span> ${esc(err.message)}\n`;
+      const lineText = src[t.line - 1] || '';
+      html += esc(lineText) + '\n' + ' '.repeat(Math.max(0, t.col - 1)) + '^'.repeat(len);
+      editor.setError(t.line);
+    } else {
+      html += `<span class="loc">Error:</span> ${esc(err.message)}`;
+      editor.setError(null);
+    }
+    if (err.hint) html += `<div class="hintline">${esc(err.hint)}</div>`;
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+  function showWarnings(box, rs) {
+    const w = rs && rs.warnings && rs.warnings.length ? rs.warnings : null;
+    box.hidden = !w;
+    if (w) box.innerHTML = w.map(esc).join('<br>');
+  }
+
+  // ---------- форматирование ----------
+  function pktHTML(str) {
+    const m = /^(\S+)\s+(\S+)\s+(\S+)\s*(?:>|->)\s*(\S+)(.*)$/.exec(str.trim());
+    if (!m) return esc(str);
+    const iif = m[1] === '-' ? '<span class="iif">хост</span>' : `<span class="iif">${esc(m[1])}</span>`;
+    return `${iif} ${esc(m[2])} ${esc(m[3])} <span class="arrow">→</span> ${esc(m[4])}<span class="fl">${esc(m[5])}</span>`;
+  }
+  const WANT = { accept: 'accept', drop: 'drop', reject: 'reject', deny: 'drop/reject', mixed: 'часть пройдёт' };
+  const pillClass = v => /^(accept|drop|reject)/.test(v) ? v.split(/[ ×]/)[0] : '';
+  function verdictTag(v) {
+    if (!v) return '<span class="tag cont">продолжение</span>';
+    const c = v === 'accept' ? 'accept' : v === 'drop' ? 'drop' : v === 'reject' ? 'reject' : /^(dnat|snat|masquerade|redirect)/.test(v) ? 'nat' : 'jmp';
+    return `<span class="tag ${c}">${esc(v)}</span>`;
+  }
+  function chainLabel(ch) { return `${ch.table.family} ${ch.table.name} ${ch.name}`; }
+
+  function traceHTML(run) {
+    const hooks = run.steps.filter(s => s.t === 'hook').map(s => s.hook);
+    let path = hooks.map((h, i) => `<span class="${i === hooks.length - 1 ? 'end-' + run.verdict : ''}">${h}</span>`).join('<i>→</i>');
+    if (!hooks.length) path = `<span class="end-${run.verdict}">маршрутизация</span>`;
+    let html = `<div class="path">${path}<i>→</i><span class="end-${run.verdict}">${run.verdict}</span></div>`;
+    for (const s of run.steps) {
+      switch (s.t) {
+        case 'hook': html += `<div class="st hook"><span class="k">хук</span><span class="v">${s.hook}</span></div>`; break;
+        case 'chain':
+          html += s.sub
+            ? `<div class="st chain"><span class="k">цепь</span><span class="v">→ ${esc(s.ch.name)} <small>обычная цепочка</small></span></div>`
+            : `<div class="st chain"><span class="k">цепь</span><span class="v">${esc(chainLabel(s.ch))} <small>type ${s.ch.type} · priority ${s.ch.prio} · policy ${s.ch.policy}</small></span></div>`;
+          break;
+        case 'rule': html += `<div class="st rule" data-line="${s.line}" title="Показать в редакторе"><span class="k">L${s.line}</span><span class="v">${esc(s.text)}${verdictTag(s.verdict)}</span></div>`; break;
+        case 'policy': html += `<div class="st policy" data-line="${s.line}"><span class="k">конец</span><span class="v">${esc(s.text)}</span></div>`; break;
+        case 'end': html += `<div class="st end"><span class="k">итог</span><span class="v">${verdictTag(s.verdict)} ${esc(s.text || (s.verdict === 'drop' ? 'пакет отброшен' : s.verdict === 'reject' ? 'отправлен отказ' + (run.rejectWith ? ' (' + run.rejectWith + ')' : '') : ''))}</span></div>`; break;
+        default: html += `<div class="st ${s.t}"><span class="k">${{ ct: 'ct', nat: 'nat', route: 'route', log: 'log', back: 'назад', note: '—' }[s.t] || s.t}</span><span class="v">${esc(s.text)}</span></div>`;
+      }
+    }
+    return `<div class="trace">${html}</div>`;
+  }
+  function copiesNote(res) {
+    if (res.pk.count < 2) return '';
+    return `<div class="copies">Показан первый пакет из ${res.pk.count}. Итог по пачке: ${esc(NFT.gotLabel(res.agg, res.pk.count))}.</div>`;
+  }
+
+  // ---------- уровни ----------
+  const ed = makeEditor($('#ed-main'), {
+    id: 'code-main', min: 260, max: 620,
+    onRun: () => runLevel(true),
+    onChange: v => { S.code[S.current] = v; save(); }
+  });
+  const levelById = id => LEVELS.find(l => l.id === id) || LEVELS[0];
+  let hintsShown = 0, solutionShown = false, lastRes = null;
+
+  function renderLevels() {
+    $('#levels').innerHTML = '<h2>Уровни</h2>' + LEVELS.map((l, i) =>
+      `<button type="button" class="lvl${S.solved[l.id] ? ' done' : ''}" data-id="${l.id}" aria-current="${l.id === S.current}"><span class="no">${String(i + 1).padStart(2, '0')}</span><span>${esc(l.title)}</span><span class="dot" aria-label="${S.solved[l.id] ? 'пройден' : 'не пройден'}"></span></button>`).join('');
+    const n = LEVELS.filter(l => S.solved[l.id]).length;
+    $('#prog-n').textContent = n;
+    $('#prog-t').textContent = LEVELS.length;
+    $('#prog-bar').style.width = (n / LEVELS.length * 100) + '%';
+  }
+  function topoHTML(topo) {
+    return `<span class="host">${esc(topo.name)}</span>` + topo.ifaces.map(i => `<span class="if">${esc(i.name)} ${esc(i.addr)}${i.net && i.name !== 'lo' ? '/' + i.net.split('/')[1] : ''} <em>${esc(i.role)}</em></span>`).join('') +
+      `<span class="fw">ip_forward = ${topo.forward ? 1 : 0}</span>`;
+  }
+  function renderBrief() {
+    const L = levelById(S.current), idx = LEVELS.indexOf(L);
+    const firstVisit = !S.code[L.id] && !S.solved[L.id];
+    $('#brief').innerHTML = `
+      <div class="eyebrow">Уровень ${idx + 1} из ${LEVELS.length}</div>
+      <h1>${esc(L.title)}</h1>
+      <div class="task"><b>Задача</b>${esc(L.task)}</div>
+      <div class="topo">${topoHTML(L.topo)}</div>
+      <details class="theory"${firstVisit || idx === 0 ? ' open' : ''}><summary>Теория</summary><div class="theory-body">${L.theory}</div></details>
+      <div class="helpers">
+        <button class="btn" type="button" id="btn-hint">${hintsShown ? `Ещё подсказка (${hintsShown}/${L.hints.length})` : `Подсказка (0/${L.hints.length})`}</button>
+        <button class="btn ghost" type="button" id="btn-sol">${solutionShown ? 'Скрыть решение' : 'Показать решение'}</button>
+        <div class="hints" id="hints">${L.hints.slice(0, hintsShown).map(h => `<div class="hint">${fmtHint(h)}</div>`).join('')}</div>
+        <div class="solution" id="solution"${solutionShown ? '' : ' hidden'}><pre>${L.solution.split('\n').map(hl).join('\n')}</pre><button class="btn" type="button" id="btn-paste">Вставить в редактор</button></div>
+      </div>`;
+    $('#btn-hint').disabled = hintsShown >= L.hints.length;
+  }
+  const fmtHint = h => esc(h).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  function openLevel(id) {
+    S.current = id; save();
+    hintsShown = 0; solutionShown = false;
+    const L = levelById(id);
+    ed.set(S.code[id] != null ? S.code[id] : L.starter);
+    renderLevels(); renderBrief();
+    runLevel(false);
+  }
+
+  function runLevel(byUser) {
+    const L = levelById(S.current);
+    const res = NFT.runSuite(ed.get(), L);
+    lastRes = res;
+    if (res.error) {
+      showError($('#err-main'), ed, res.error);
+      $('#warn-main').hidden = true;
+      ed.setHits({});
+      renderResults(L, null, res.error);
+      return;
+    }
+    showError($('#err-main'), ed, null);
+    showWarnings($('#warn-main'), res.rs);
+    ed.setHits(res.hits);
+    const wasSolved = !!S.solved[L.id];
+    if (res.solved && byUser !== null) { S.solved[L.id] = true; save(); }
+    renderResults(L, res, null, res.solved && !wasSolved);
+    renderLevels();
+  }
+
+  function renderResults(L, res, err, fresh) {
+    const box = $('#results');
+    const idx = LEVELS.indexOf(L);
+    const total = L.flows.reduce((a, f) => a + f.packets.length, 0);
+    let head;
+    if (err) {
+      head = `<div class="score"><b>—</b><span>набор правил не загрузился: nft вернул ошибку</span></div><div class="segs">${'<i></i>'.repeat(total)}</div>`;
+    } else {
+      const segs = res.flows.flatMap(f => f.packets.map(p => `<i class="${p.ok ? 'ok' : 'bad'}"></i>`)).join('');
+      const next = LEVELS[idx + 1];
+      head = `<div class="score"><b>${res.passed} / ${res.total}</b><span>тестовых пакетов ведут себя как нужно</span></div><div class="segs">${segs}</div><div class="legend"><span class="pill want">drop</span> ожидаемый вердикт · <span class="pill accept">accept</span> что получилось. Нажмите на пакет, чтобы увидеть его путь.</div>`;
+      if (res.checks.length) head += `<ul class="checks">${res.checks.map(c => `<li class="${c.ok ? '' : 'bad'}">${esc(c.text)}</li>`).join('')}</ul>`;
+      if (res.solved) head += `<div class="solved"><strong>${fresh ? 'Уровень пройден.' : 'Все тесты проходят.'}</strong>${next ? `<button class="btn primary" type="button" data-open="${next.id}">Дальше: ${esc(next.title)} →</button>` : '<span>Это был последний уровень. Песочница открыта для экспериментов.</span>'}</div>`;
+    }
+    let body = '';
+    let openedFail = false;
+    L.flows.forEach((flow, fi) => {
+      body += `<div class="flow"><h3>${esc(flow.name)}</h3>`;
+      flow.packets.forEach((spec, pi) => {
+        const r = res && res.flows[fi].packets[pi];
+        const state = !r ? 'pending' : r.ok ? 'ok' : 'bad';
+        const icon = state === 'ok' ? '✓' : state === 'bad' ? '✗' : '·';
+        const got = r ? `<span class="pill ${pillClass(r.got)}">${esc(r.got)}</span>` : '';
+        const open = state === 'bad' && !openedFail;
+        if (open) openedFail = true;
+        let why = '';
+        if (state === 'bad') {
+          const extra = r.problems.filter(x => x !== 'verdict');
+          why = `<div class="why">${esc(r.runtimeError || spec.why || 'Вердикт не совпал с ожидаемым.')}${extra.length && !r.runtimeError ? `<ul>${extra.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
+        }
+        body += `<details class="pkt ${state}"${open ? ' open' : ''}><summary><span class="ic" aria-hidden="true">${icon}</span><span class="ptext">${pktHTML(spec.p)}</span><span class="verd"><span class="pill want" title="ожидается">${esc(WANT[spec.e])}</span>${got}</span></summary>${why}${r && r.res ? traceHTML(r.res.runs[0]) + copiesNote(r.res) : ''}</details>`;
+      });
+      body += '</div>';
+    });
+    box.innerHTML = `<div class="res-head">${head}</div><div class="flows">${body}</div>`;
+  }
+
+  $('#results').addEventListener('click', e => {
+    const o = e.target.closest('[data-open]');
+    if (o) { openLevel(o.dataset.open); window.scrollTo({ top: 0 }); return; }
+    const l = e.target.closest('[data-line]');
+    if (l && l.dataset.line && l.dataset.line !== 'undefined') ed.flash(+l.dataset.line);
+  });
+  $('#levels').addEventListener('click', e => { const b = e.target.closest('.lvl'); if (b) openLevel(b.dataset.id); });
+  $('#brief').addEventListener('click', e => {
+    const L = levelById(S.current);
+    if (e.target.closest('#btn-hint')) { hintsShown = Math.min(L.hints.length, hintsShown + 1); renderBrief(); }
+    else if (e.target.closest('#btn-sol')) { solutionShown = !solutionShown; renderBrief(); }
+    else if (e.target.closest('#btn-paste')) { ed.set(L.solution); S.code[L.id] = L.solution; save(); runLevel(true); }
+  });
+  $('#btn-run').addEventListener('click', () => runLevel(true));
+  let resetArmed = null;
+  $('#btn-reset').addEventListener('click', e => {
+    const b = e.currentTarget;
+    if (!resetArmed) {
+      b.textContent = 'Точно? Нажмите ещё раз'; b.classList.add('danger');
+      resetArmed = setTimeout(() => { resetArmed = null; b.textContent = 'Вернуть исходный'; b.classList.remove('danger'); }, 3000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null; b.textContent = 'Вернуть исходный'; b.classList.remove('danger');
+    const L = levelById(S.current);
+    ed.set(L.starter); delete S.code[L.id]; save(); runLevel(true);
+  });
+
+  // ---------- песочница ----------
+  const sbEd = makeEditor($('#ed-sb'), {
+    id: 'code-sb', min: 300, max: 760,
+    onRun: () => sendPacket(),
+    onChange: v => { S.sandbox = v; save(); }
+  });
+  const sb = { rs: null, src: null, state: NFT.newState(), history: [] };
+  $('#sb-topo').innerHTML = topoHTML(SANDBOX.topo);
+  $('#sb-presets').innerHTML = SANDBOX.presets.map((p, i) => `<button type="button" data-i="${i}" title="${esc(p.p)}">${esc(p.label)}</button>`).join('');
+
+  function sbCompile() {
+    const src = sbEd.get();
+    if (src === sb.src && sb.rs) return true;
+    try {
+      sb.rs = NFT.compile(src); sb.src = src;
+      showError($('#err-sb'), sbEd, null);
+      showWarnings($('#warn-sb'), sb.rs);
+      sbEd.setHits({});
+      return true;
+    } catch (err) {
+      sb.rs = null; sb.src = null;
+      showError($('#err-sb'), sbEd, err);
+      return false;
+    }
+  }
+  function sendPacket() {
+    const inerr = $('#sb-inerr');
+    inerr.textContent = '';
+    if (!sbCompile()) { inerr.textContent = 'Сначала исправьте ошибку в наборе правил.'; return; }
+    const str = $('#sb-pkt').value;
+    let res;
+    try { res = NFT.runPacket(sb.rs, SANDBOX.topo, { p: str }, sb.state); }
+    catch (err) { inerr.textContent = err.message; return; }
+    sb.history.unshift({ str, res, n: (sb.history[0]?.n || 0) + 1 });
+    sb.history = sb.history.slice(0, 30);
+    const hits = {};
+    for (const tb of sb.rs.tables) for (const ch of tb.chains.values()) for (const r of ch.rules) if (r.hits) hits[r.line] = (hits[r.line] || 0) + r.hits;
+    sbEd.setHits(hits);
+    renderSandbox();
+  }
+  function renderSandbox() {
+    const h = $('#sb-history');
+    if (!sb.history.length) h.innerHTML = '<div class="empty">Здесь появится путь каждого отправленного пакета: хуки, сработавшие правила, NAT и итог. Попробуйте «LAN → сайт», а следом «ответ сайта».</div>';
+    else h.innerHTML = sb.history.map((it, i) => {
+      const r = it.res.runs[0];
+      return `<details class="pkt"${i === 0 ? ' open' : ''}><summary><span class="ic" style="color:var(--muted)">${it.n}</span><span class="ptext">${pktHTML(it.str)}</span><span class="verd"><span class="pill ${pillClass(NFT.gotLabel(it.res.agg, it.res.pk.count))}">${esc(NFT.gotLabel(it.res.agg, it.res.pk.count))}</span></span></summary>${traceHTML(r)}${copiesNote(it.res)}</details>`;
+    }).join('');
+    const ct = sb.state.conns;
+    const ep = (t) => `${NFT.intToIp(t.src)}${t.proto === 1 ? '' : ':' + t.sport} → ${NFT.intToIp(t.dst)}${t.proto === 1 ? '' : ':' + t.dport}`;
+    const proto = n => ({ 1: 'icmp', 6: 'tcp', 17: 'udp' }[n] || n);
+    $('#sb-ct').innerHTML = ct.length
+      ? `<table class="cttable"><tr><th>proto</th><th>оригинал</th><th>ожидаемый ответ</th><th>состояние</th></tr>${ct.map(e => `<tr><td>${proto(e.orig.proto)}</td><td>${ep(e.orig)}</td><td>${ep(e.reply)}</td><td>${e.seenReply ? 'established' : 'ждёт ответа'}${e.dnat ? ' · dnat' : ''}${e.snat ? ' · snat' : ''}</td></tr>`).join('')}</table>`
+      : '<div class="empty">Записей нет. Первый принятый пакет соединения создаст запись, а ответ на него станет established.</div>';
+  }
+  $('#sb-form').addEventListener('submit', e => { e.preventDefault(); sendPacket(); });
+  $('#sb-presets').addEventListener('click', e => {
+    const b = e.target.closest('button[data-i]');
+    if (!b) return;
+    $('#sb-pkt').value = SANDBOX.presets[+b.dataset.i].p;
+    sendPacket();
+  });
+  $('#sb-ctflush').addEventListener('click', () => { sb.state = NFT.newState(); renderSandbox(); });
+  $('#sb-reset').addEventListener('click', () => { sbEd.set(SANDBOX.ruleset); S.sandbox = null; save(); sb.src = null; sbCompile(); });
+  $('#sb-history').addEventListener('click', e => { const l = e.target.closest('[data-line]'); if (l && l.dataset.line !== 'undefined') sbEd.flash(+l.dataset.line); });
+
+  // ---------- вкладки ----------
+  function setView(v) {
+    if (!['missions', 'sandbox', 'reference'].includes(v)) v = 'missions';
+    S.view = v; save();
+    document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+    ['missions', 'sandbox', 'reference'].forEach(x => { $('#view-' + x).hidden = x !== v; });
+    if (v === 'missions') ed.render();
+    if (v === 'sandbox') { sbEd.render(); sbCompile(); }
+  }
+  document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view); });
+
+  // ---------- старт ----------
+  sbEd.set(S.sandbox || SANDBOX.ruleset);
+  renderSandbox();
+  openLevel(levelById(S.current).id);
+  const fromHash = (location.hash || '').slice(1);
+  setView(['missions', 'sandbox', 'reference'].includes(fromHash) ? fromHash : S.view);
+})();
+
+</script>
+
+</body>
+</html>

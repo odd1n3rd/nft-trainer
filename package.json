@@ -1,0 +1,14 @@
+{
+  "name": "nft-trainer",
+  "version": "1.0.0",
+  "description": "Интерактивный тренажёр nftables в браузере",
+  "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node test/levels.test.js",
+    "check:nft": "sh scripts/nft-check.sh",
+    "start": "node server.js"
+  }
+}

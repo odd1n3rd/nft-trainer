@@ -1,0 +1,514 @@
+<title>nft-тренажёр</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Onest:wght@400;500;600&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: рабочий стол админа — список уровней | задача и редактор | результаты и трассировка пакетов */
+:root {
+  --bg: #e9edf1;
+  --panel: #ffffff;
+  --panel-2: #f4f6f9;
+  --ink: #17202a;
+  --muted: #5a6774;
+  --line: #d3dae2;
+  --accent: #0d6a8a;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcebf1;
+  --ok: #1b7f45;
+  --ok-soft: #dcf1e4;
+  --bad: #be3a2f;
+  --bad-soft: #f8e1de;
+  --warn: #a8690f;
+  --warn-soft: #f6ead3;
+  --code-bg: #fbfcfd;
+  --sx-kw: #8a3fa8;
+  --sx-kw2: #0d6a8a;
+  --sx-sel: #2c4f9e;
+  --sx-num: #9a5b06;
+  --sx-str: #2e7d32;
+  --sx-com: #8593a0;
+  --sx-var: #b0345a;
+  --font-display: "Unbounded", "Onest", system-ui, sans-serif;
+  --font-body: "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  --lh: 21px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1317; --panel: #151c22; --panel-2: #1a232a; --ink: #e2e8ed; --muted: #8e9ba7;
+    --line: #26313a; --accent: #4fb0d4; --accent-ink: #06222d; --accent-soft: #15303b;
+    --ok: #52c483; --ok-soft: #163325; --bad: #f0695e; --bad-soft: #3a1c1a; --warn: #e4aa4a; --warn-soft: #362812;
+    --code-bg: #11171c; --sx-kw: #d08ff0; --sx-kw2: #5cc3e6; --sx-sel: #8eb0ff; --sx-num: #f0b35a;
+    --sx-str: #8fd394; --sx-com: #66737f; --sx-var: #ff8bab;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1317; --panel: #151c22; --panel-2: #1a232a; --ink: #e2e8ed; --muted: #8e9ba7;
+  --line: #26313a; --accent: #4fb0d4; --accent-ink: #06222d; --accent-soft: #15303b;
+  --ok: #52c483; --ok-soft: #163325; --bad: #f0695e; --bad-soft: #3a1c1a; --warn: #e4aa4a; --warn-soft: #362812;
+  --code-bg: #11171c; --sx-kw: #d08ff0; --sx-kw2: #5cc3e6; --sx-sel: #8eb0ff; --sx-num: #f0b35a;
+  --sx-str: #8fd394; --sx-com: #66737f; --sx-var: #ff8bab;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); }
+/* моноширинный код без лигатур: «!=» не склеивается, курсор редактора не съезжает */
+html { font-feature-settings: "liga" 0, "calt" 0; }
+body { color: var(--ink); font: 15px/1.55 var(--font-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+button { font: inherit; color: inherit; }
+code, pre, kbd { font-family: var(--font-mono); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand b { font: 600 18px/1 var(--font-display); letter-spacing: -0.01em; }
+.brand b span { color: var(--accent); }
+.brand small { color: var(--muted); font-size: 12.5px; }
+.tabs { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.tabs button { border: 0; background: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 14px; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.progress { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.progress .bar { width: 120px; height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: var(--ok); width: 0; transition: width .4s; }
+.progress b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.wrap { padding-block: 18px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1680px; margin: 0 auto; }
+
+/* missions grid */
+.missions { display: grid; grid-template-columns: 236px minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.levels { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 70px); display: flex; flex-direction: column; gap: 2px; }
+.levels h2 { font: 600 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 4px 10px 10px; }
+.lvl { display: grid; grid-template-columns: 26px 1fr 16px; align-items: center; gap: 8px; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--ink); }
+.lvl:hover { background: var(--panel); }
+.lvl .no { font: 500 12px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.lvl .dot { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--line); }
+.lvl.done .dot { background: var(--ok); border-color: var(--ok); box-shadow: inset 0 0 0 2.5px var(--bg); }
+.lvl[aria-current="true"] { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+
+/* brief */
+.brief { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); }
+.brief h1 { font: 600 24px/1.2 var(--font-display); margin: 0; letter-spacing: -0.015em; text-wrap: balance; }
+.task { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; font-size: 15px; }
+.task b { display: block; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.topo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; }
+.topo .host { font: 600 12.5px var(--font-mono); margin-right: 4px; }
+.topo .if { font-family: var(--font-mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.topo .if em { font-style: normal; color: var(--muted); font-family: var(--font-body); }
+.topo .fw { color: var(--muted); }
+details.theory { border-top: 1px solid var(--line); padding-top: 12px; }
+details.theory summary { cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.theory summary::before { content: "▸"; color: var(--accent); transition: transform .15s; }
+details.theory[open] summary::before { transform: rotate(90deg); }
+.theory-body { font-size: 14.5px; max-width: 70ch; }
+.theory-body p, .theory-body ul, .theory-body ol { margin: 10px 0; }
+.theory-body ul, .theory-body ol { padding-left: 20px; }
+.theory-body code { font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); padding: 0 4px; border-radius: 4px; }
+.theory-body pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 10px 0; }
+.theory-body pre .c { color: var(--sx-com); }
+.theory-body .warn { background: var(--warn-soft); border-radius: 6px; padding: 8px 10px; }
+.theory-body .muted { color: var(--muted); }
+.helpers { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.hints { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.hints:empty { display: none; }
+.hint { font-size: 14px; background: var(--panel-2); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: 7px 10px; }
+.hint code { font-size: 13px; }
+.solution { width: 100%; }
+.solution pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0 0 8px; max-height: 340px; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 13px; cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: none; }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn kbd { font-size: 11px; opacity: .75; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* editor */
+.edcard { overflow: hidden; }
+.edbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.edbar .file { font: 500 12.5px var(--font-mono); color: var(--muted); margin-right: auto; }
+.ed { position: relative; display: grid; grid-template-columns: 62px minmax(0, 1fr); background: var(--code-bg); height: 360px; }
+.ed-gutter { overflow: hidden; border-right: 1px solid var(--line); padding: 12px 0; font: 12px/var(--lh) var(--font-mono); color: var(--muted); user-select: none; }
+.ed-gutter div { height: var(--lh); display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding-right: 9px; font-variant-numeric: tabular-nums; }
+.ed-gutter .h { font-size: 10.5px; line-height: 15px; padding: 0 4px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.ed-gutter .err .n { color: var(--bad); font-weight: 600; }
+.ed-body { position: relative; min-width: 0; }
+.ed-hl, .ed-ta { position: absolute; inset: 0; margin: 0; padding: 12px 14px; font: 13px/var(--lh) var(--font-mono); white-space: pre; tab-size: 2; letter-spacing: 0; word-spacing: 0; }
+.ed-hl { overflow: hidden; pointer-events: none; color: var(--ink); }
+.ed-lines { width: max-content; min-width: 100%; }
+.ed-lines > div { height: var(--lh); margin: 0 -14px; padding: 0 14px; }
+.ed-lines > div.err { background: var(--bad-soft); }
+.ed-lines > div.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+.ed-ta { resize: none; border: 0; outline: none; background: transparent; color: transparent; caret-color: var(--ink); overflow: auto; }
+.ed-ta::selection { background: rgb(13 106 138 / .25); color: transparent; }
+.sx-kw { color: var(--sx-kw); font-weight: 600; }
+.sx-kw2 { color: var(--sx-kw2); }
+.sx-sel { color: var(--sx-sel); }
+.sx-num { color: var(--sx-num); }
+.sx-str { color: var(--sx-str); }
+.sx-com { color: var(--sx-com); font-style: italic; }
+.sx-var { color: var(--sx-var); }
+.sx-ok { color: var(--ok); font-weight: 600; }
+.sx-bad { color: var(--bad); font-weight: 600; }
+.sx-warn { color: var(--warn); font-weight: 600; }
+.sx-jmp { color: var(--accent); font-weight: 600; }
+.sx-stmt { color: var(--sx-kw); }
+.errbox { border-top: 1px solid var(--line); background: var(--bad-soft); padding: 10px 14px; font: 12.5px/1.55 var(--font-mono); white-space: pre-wrap; overflow-x: auto; color: var(--ink); }
+.errbox .loc { color: var(--bad); font-weight: 600; }
+.errbox .hintline { font-family: var(--font-body); font-size: 13.5px; color: var(--ink); margin-top: 6px; white-space: normal; }
+.warnbox { border-top: 1px solid var(--line); background: var(--warn-soft); padding: 8px 14px; font-size: 13px; }
+
+/* results */
+.results { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 70px); max-height: calc(100vh - 90px); overflow: auto; }
+.res-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.score { display: flex; align-items: baseline; gap: 10px; }
+.score b { font: 600 28px/1 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.legend { font-size: 12px; color: var(--muted); }
+.legend .pill { font-size: 10px; padding: 2px 5px; }
+.score span { color: var(--muted); font-size: 14px; }
+.segs { display: flex; gap: 3px; }
+.segs i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.segs i.ok { background: var(--ok); }
+.segs i.bad { background: var(--bad); }
+.solved { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--ok-soft); border-radius: 8px; padding: 10px 12px; }
+.solved strong { color: var(--ok); }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.checks li { display: flex; gap: 8px; }
+.checks li::before { content: "✓"; color: var(--ok); font-weight: 700; width: 14px; flex: none; }
+.checks li.bad::before { content: "✗"; color: var(--bad); }
+.flows { padding: 6px 0 12px; }
+.flow { padding: 10px 18px 4px; }
+.flow h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pkt { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; background: var(--panel); }
+.pkt.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.pkt summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; }
+.pkt summary::-webkit-details-marker { display: none; }
+.pkt .ic { font-weight: 700; text-align: center; }
+.pkt.ok .ic { color: var(--ok); }
+.pkt.bad .ic { color: var(--bad); }
+.pkt.pending .ic { color: var(--muted); }
+.ptext { font: 12.5px/1.45 var(--font-mono); overflow-wrap: anywhere; min-width: 0; }
+.ptext .iif { color: var(--accent); font-weight: 600; }
+.ptext .arrow { color: var(--muted); }
+.ptext .fl { color: var(--muted); }
+.verd { display: flex; gap: 4px; align-items: center; font-size: 11.5px; white-space: nowrap; }
+.pill { font: 600 11px/1 var(--font-mono); padding: 4px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line); }
+.pill.accept { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.drop { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.pill.reject { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.pill.want { background: none; color: var(--muted); border-style: dashed; }
+.why { margin: 0 10px 8px 36px; font-size: 13px; color: var(--ink); background: var(--bad-soft); border-radius: 6px; padding: 6px 9px; }
+.why ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* trace */
+.trace { border-top: 1px dashed var(--line); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.path { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+.path span { font: 600 10.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .04em; padding: 4px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+.path span.end-drop { background: var(--bad-soft); color: var(--bad); }
+.path span.end-reject { background: var(--warn-soft); color: var(--warn); }
+.path span.end-accept { background: var(--ok-soft); color: var(--ok); }
+.path i { color: var(--muted); font-style: normal; font-size: 11px; }
+.st { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 2px 4px; border-radius: 4px; }
+.st .k { font: 600 10px/1.8 var(--font-mono); text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
+.st .v { min-width: 0; overflow-wrap: anywhere; }
+.st.hook { margin-top: 6px; }
+.st.hook .v { font: 600 11.5px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+.st.chain .v { font-family: var(--font-mono); font-size: 12px; }
+.st.chain .v small { color: var(--muted); font-family: var(--font-body); }
+.st.rule, .st.policy { cursor: pointer; }
+.st.rule:hover, .st.policy:hover { background: var(--panel-2); }
+.st.rule .v { font-family: var(--font-mono); font-size: 12px; }
+.st.rule .ln { color: var(--muted); margin-right: 6px; }
+.st .tag { font: 600 10.5px var(--font-mono); padding: 1px 5px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+.tag.accept { background: var(--ok-soft); color: var(--ok); }
+.tag.drop { background: var(--bad-soft); color: var(--bad); }
+.tag.reject { background: var(--warn-soft); color: var(--warn); }
+.tag.jmp, .tag.nat { background: var(--accent-soft); color: var(--accent); }
+.tag.cont { background: var(--panel-2); color: var(--muted); }
+.st.note .v, .st.ct .v, .st.route .v, .st.back .v { color: var(--muted); }
+.st.nat .v { color: var(--accent); font-family: var(--font-mono); font-size: 12px; }
+.st.log .v { color: var(--warn); }
+.st.end { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+.st.end .v { font-weight: 600; }
+.copies { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+/* sandbox */
+.sandbox { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.console { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.console h2, .sbside h2 { font: 600 16px/1.2 var(--font-display); margin: 0; }
+.sendrow { display: flex; gap: 8px; }
+.sendrow input { flex: 1; min-width: 0; font: 13px var(--font-mono); padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--code-bg); color: var(--ink); }
+.dslhelp { font-size: 12.5px; color: var(--muted); }
+.dslhelp code { font-size: 12px; color: var(--ink); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
+.presets button:hover { border-color: var(--accent); color: var(--accent); }
+.inerr { color: var(--bad); font-size: 13px; }
+.inerr:empty { display: none; }
+.history { display: flex; flex-direction: column; gap: 6px; }
+.empty { color: var(--muted); font-size: 13.5px; border: 1px dashed var(--line); border-radius: 8px; padding: 14px; }
+.cttable { width: 100%; border-collapse: collapse; font: 12px var(--font-mono); }
+.cttable th { text-align: left; font: 600 11px var(--font-body); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.cttable td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tablewrap { overflow-x: auto; }
+.sbside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sbintro { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.sbintro p { margin: 0; color: var(--muted); max-width: 70ch; }
+
+/* reference */
+.ref { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; align-items: start; }
+.ref .card { padding: 18px 20px; }
+.ref h2 { font: 600 16px/1.25 var(--font-display); margin: 0 0 12px; }
+.ref .wide { grid-column: 1 / -1; }
+.ref table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ref td, .ref th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ref th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.ref td code { font-size: 12.5px; white-space: nowrap; }
+.ref td:first-child { width: 46%; }
+.ref pre { font-size: 12.8px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0; }
+.ref p { font-size: 14px; margin: 8px 0; max-width: 72ch; }
+.ref .c { color: var(--sx-com); }
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.diagram .box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.diagram .ext { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.5; }
+.diagram .dec { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.diagram text { font: 600 13px var(--font-mono); fill: var(--ink); font-variant-ligatures: none; }
+.diagram text.sub { font: 400 11.5px var(--font-body); fill: var(--muted); }
+.diagram .arr { stroke: var(--muted); stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+.diagram #ah path { fill: var(--muted); }
+
+[hidden] { display: none !important; }
+
+@media (max-width: 1240px) {
+  .missions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .levels { position: static; grid-column: 1 / -1; flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+  .levels h2 { display: none; }
+  .lvl { grid-template-columns: auto auto 14px; white-space: nowrap; background: var(--panel); border: 1px solid var(--line); }
+  .lvl[aria-current="true"] { box-shadow: inset 0 -3px 0 var(--accent); }
+}
+@media (max-width: 900px) {
+  .missions, .sandbox { grid-template-columns: minmax(0, 1fr); }
+  .results { position: static; max-height: none; }
+  .progress { margin-left: 0; }
+  .brief { padding: 16px; }
+  .brief h1 { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><b>nft<span>·</span>тренажёр</b><small>nftables без риска потерять SSH</small></div>
+    <nav class="tabs" role="tablist" aria-label="Разделы">
+      <button role="tab" id="tab-missions" data-view="missions" aria-selected="true">Уровни</button>
+      <button role="tab" id="tab-sandbox" data-view="sandbox" aria-selected="false">Песочница</button>
+      <button role="tab" id="tab-reference" data-view="reference" aria-selected="false">Справочник</button>
+    </nav>
+    <div class="progress" aria-live="polite"><span>Пройдено <b id="prog-n">0</b> из <b id="prog-t">12</b></span><span class="bar"><i id="prog-bar"></i></span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ===== уровни ===== -->
+  <section id="view-missions" class="missions">
+    <nav class="levels" id="levels" aria-label="Уровни"></nav>
+    <div class="col">
+      <article class="card brief" id="brief"></article>
+      <div class="card edcard">
+        <div class="edbar">
+          <span class="file">/etc/nftables.conf</span>
+          <button class="btn ghost" id="btn-reset" type="button">Вернуть исходный</button>
+          <button class="btn primary" id="btn-run" type="button">Проверить <kbd>⌘↵</kbd></button>
+        </div>
+        <div id="ed-main"></div>
+        <div class="errbox" id="err-main" hidden></div>
+        <div class="warnbox" id="warn-main" hidden></div>
+      </div>
+    </div>
+    <aside class="card results" id="results" aria-live="polite"></aside>
+  </section>
+
+  <!-- ===== песочница ===== -->
+  <section id="view-sandbox" class="sandbox" hidden>
+    <div class="sbside">
+      <div class="card sbintro">
+        <h2>Песочница: шлюз gw-01</h2>
+        <p>Пишите любой набор правил и отправляйте через него пакеты. Conntrack сохраняется между пакетами, как в живом ядре: отправьте запрос, а потом ответ на него.</p>
+        <div class="topo" id="sb-topo"></div>
+      </div>
+      <div class="card edcard">
+        <div class="edbar">
+          <span class="file">/etc/nftables.conf</span>
+          <button class="btn ghost" id="sb-reset" type="button">Пример по умолчанию</button>
+        </div>
+        <div id="ed-sb"></div>
+        <div class="errbox" id="err-sb" hidden></div>
+        <div class="warnbox" id="warn-sb" hidden></div>
+      </div>
+    </div>
+    <div class="sbside">
+      <div class="card console">
+        <h2>Отправить пакет</h2>
+        <form class="sendrow" id="sb-form">
+          <label for="sb-pkt" hidden>Пакет</label>
+          <input id="sb-pkt" autocomplete="off" spellcheck="false" value="eth1 tcp 192.168.1.50:51000 > 93.184.216.34:443">
+          <button class="btn primary" type="submit">Отправить</button>
+        </form>
+        <div class="inerr" id="sb-inerr"></div>
+        <div class="dslhelp">Формат: <code>&lt;iif|-&gt; &lt;tcp|udp|icmp&gt; &lt;src[:port]&gt; &gt; &lt;dst[:port]&gt; [флаги]</code>. «-» значит, что пакет отправляет сам хост. TCP-флаги через запятую (по умолчанию <code>syn</code>), тип ICMP по имени, <code>ct=invalid|related</code> задаёт состояние, <code>x20</code> — пачка из 20 пакетов.</div>
+        <div class="presets" id="sb-presets"></div>
+      </div>
+      <div class="card console">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin-right:auto">Таблица conntrack</h2><button class="btn ghost" id="sb-ctflush" type="button">conntrack -F</button></div>
+        <div class="tablewrap" id="sb-ct"></div>
+      </div>
+      <div class="card console">
+        <h2>Трассировка</h2>
+        <div class="history" id="sb-history"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== справочник ===== -->
+  <section id="view-reference" class="ref" hidden>
+    <div class="card wide">
+      <h2>Путь пакета через хуки netfilter</h2>
+      <div class="diagram">
+        <svg viewBox="0 0 900 250" role="img" aria-label="Схема: prerouting, маршрутизация, затем input или forward; output и postrouting для исходящих">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z"/></marker></defs>
+          <rect class="ext" x="10" y="30" width="96" height="44" rx="8"/><text x="58" y="57" text-anchor="middle">сеть</text>
+          <rect class="box" x="140" y="30" width="130" height="44" rx="8"/><text x="205" y="52" text-anchor="middle">prerouting</text><text class="sub" x="205" y="67" text-anchor="middle">dnat · raw</text>
+          <rect class="dec" x="304" y="30" width="120" height="44" rx="22"/><text class="sub" x="364" y="56" text-anchor="middle">маршрутизация</text>
+          <rect class="box" x="460" y="30" width="120" height="44" rx="8"/><text x="520" y="52" text-anchor="middle">forward</text><text class="sub" x="520" y="67" text-anchor="middle">транзит</text>
+          <rect class="box" x="616" y="30" width="140" height="44" rx="8"/><text x="686" y="52" text-anchor="middle">postrouting</text><text class="sub" x="686" y="67" text-anchor="middle">snat · masquerade</text>
+          <rect class="ext" x="790" y="30" width="96" height="44" rx="8"/><text x="838" y="57" text-anchor="middle">сеть</text>
+          <rect class="box" x="304" y="170" width="120" height="44" rx="8"/><text x="364" y="192" text-anchor="middle">input</text><text class="sub" x="364" y="207" text-anchor="middle">хосту</text>
+          <rect class="ext" x="460" y="170" width="120" height="44" rx="8"/><text class="sub" x="520" y="196" text-anchor="middle">локальный процесс</text>
+          <rect class="box" x="616" y="170" width="140" height="44" rx="8"/><text x="686" y="192" text-anchor="middle">output</text><text class="sub" x="686" y="207" text-anchor="middle">от хоста</text>
+          <path class="arr" d="M106 52 H138"/><path class="arr" d="M270 52 H302"/><path class="arr" d="M424 52 H458"/><path class="arr" d="M580 52 H614"/><path class="arr" d="M756 52 H788"/>
+          <path class="arr" d="M364 74 V168"/><path class="arr" d="M424 192 H458"/><path class="arr" d="M580 192 H614"/><path class="arr" d="M686 170 V76"/>
+          <text class="sub" x="372" y="125">адрес этого хоста</text><text class="sub" x="440" y="22">чужой адрес (ip_forward = 1)</text>
+        </svg>
+      </div>
+      <p>Хуки с одинаковым именем срабатывают по возрастанию <code>priority</code>. <code>accept</code> в одной базовой цепочке не спасает от <code>drop</code> в другой на том же хуке. Чтобы пакет прошёл, его должны принять все цепочки, через которые он идёт.</p>
+    </div>
+    <div class="card">
+      <h2>Скелет файла</h2>
+<pre>#!/usr/sbin/nft -f
+flush ruleset
+
+define ADMIN = 10.10.0.0/24
+
+table inet filter {
+  set blocklist {
+    type ipv4_addr; flags interval
+    elements = { 192.0.2.0/24 }
+  }
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+    iifname "lo" accept
+    ip saddr @blocklist drop
+    ip saddr $ADMIN tcp dport 22 accept
+  }
+}</pre>
+    </div>
+    <div class="card">
+      <h2>Приоритеты</h2>
+      <table>
+        <tr><th>Имя</th><th>Значение</th><th>Зачем</th></tr>
+        <tr><td><code>raw</code></td><td>−300</td><td>до conntrack, notrack</td></tr>
+        <tr><td><code>mangle</code></td><td>−150</td><td>метки, изменение пакета</td></tr>
+        <tr><td><code>dstnat</code></td><td>−100</td><td>DNAT в prerouting/output</td></tr>
+        <tr><td><code>filter</code></td><td>0</td><td>обычная фильтрация</td></tr>
+        <tr><td><code>security</code></td><td>50</td><td>SELinux-метки</td></tr>
+        <tr><td><code>srcnat</code></td><td>100</td><td>SNAT в postrouting/input</td></tr>
+      </table>
+      <p>Conntrack определяет состояние на приоритете −200: цепочки <code>raw</code> видят пакет раньше.</p>
+    </div>
+    <div class="card">
+      <h2>Выражения (match)</h2>
+      <table>
+        <tr><td><code>ip saddr 10.0.0.0/8</code></td><td>адрес источника; есть daddr</td></tr>
+        <tr><td><code>ip saddr != 10.0.0.1-10.0.0.9</code></td><td>отрицание, диапазон</td></tr>
+        <tr><td><code>tcp dport { 80, 443 }</code></td><td>порт; есть sport, udp, th</td></tr>
+        <tr><td><code>tcp dport 1000-2000</code></td><td>диапазон портов</td></tr>
+        <tr><td><code>tcp dport &lt; 1024</code></td><td>сравнение</td></tr>
+        <tr><td><code>tcp flags syn</code></td><td>установлен флаг SYN</td></tr>
+        <tr><td><code>tcp flags &amp; (syn|ack) == syn</code></td><td>маска и точное сравнение</td></tr>
+        <tr><td><code>meta l4proto { tcp, udp }</code></td><td>протокол L4</td></tr>
+        <tr><td><code>iifname "eth0"</code></td><td>входящий интерфейс; oifname — исходящий</td></tr>
+        <tr><td><code>icmp type echo-request</code></td><td>тип ICMP</td></tr>
+        <tr><td><code>ct state established,related</code></td><td>состояние conntrack</td></tr>
+        <tr><td><code>ct status dnat</code></td><td>к соединению применён DNAT</td></tr>
+        <tr><td><code>ip saddr @blocklist</code></td><td>поиск в именованном множестве</td></tr>
+        <tr><td><code>meta mark 0x1</code></td><td>метка пакета</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Действия и вердикты</h2>
+      <table>
+        <tr><td><code>accept</code> · <code>drop</code></td><td>окончательное решение для цепочки</td></tr>
+        <tr><td><code>reject</code></td><td>отказ ICMP port-unreachable</td></tr>
+        <tr><td><code>reject with tcp reset</code></td><td>отказ TCP RST</td></tr>
+        <tr><td><code>jump имя</code> · <code>goto имя</code></td><td>переход с возвратом / без</td></tr>
+        <tr><td><code>return</code> · <code>continue</code></td><td>вернуться / идти дальше</td></tr>
+        <tr><td><code>counter</code></td><td>счётчик пакетов и байт</td></tr>
+        <tr><td><code>log prefix "x: "</code></td><td>запись в журнал ядра</td></tr>
+        <tr><td><code>limit rate 5/second</code></td><td>совпадает, пока не превышен лимит</td></tr>
+        <tr><td><code>meta mark set 0x1</code></td><td>поставить метку</td></tr>
+        <tr><td><code>dnat ip to 10.0.0.5:80</code></td><td>подмена получателя</td></tr>
+        <tr><td><code>snat ip to 203.0.113.10</code></td><td>подмена источника</td></tr>
+        <tr><td><code>masquerade</code></td><td>SNAT на адрес oif</td></tr>
+        <tr><td><code>redirect to :8080</code></td><td>DNAT на сам хост</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>На живой системе</h2>
+<pre><span class="c"># проверить синтаксис, ничего не применяя</span>
+nft -c -f /etc/nftables.conf
+<span class="c"># применить атомарно</span>
+nft -f /etc/nftables.conf
+nft list ruleset
+nft -a list chain inet filter input   <span class="c"># с handle</span>
+<span class="c"># трассировка, как в тренажёре</span>
+nft add rule inet filter prerouting \
+  ip saddr 198.51.100.7 meta nftrace set 1
+nft monitor trace
+<span class="c"># страховка от потери доступа</span>
+nft -f new.conf; sleep 60; nft -f old.conf</pre>
+    </div>
+    <div class="card">
+      <h2>Что моделирует тренажёр</h2>
+      <p>Только IPv4. Семейства <code>ip</code> и <code>inet</code>, хуки prerouting / input / forward / output / postrouting, цепочки filter и nat с приоритетами, conntrack (new, established, повтор первого пакета), DNAT, SNAT, masquerade, redirect с обратной трансляцией ответов, анонимные и именованные множества, define, jump, goto, return, log, counter, limit, reject.</p>
+      <p>Не моделируются: IPv6-трафик (правила ip6 разбираются, но не совпадают), map/vmap, конкатенации, flowtable, таймауты conntrack, фрагментация. <code>limit</code> упрощён: пакеты одной пачки приходят одновременно, проходят первые <i>burst</i> штук.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+/*ENGINE*/
+</script>
+<script>
+/*LEVELS*/
+</script>
+<script>
+/*APP*/
+</script>
